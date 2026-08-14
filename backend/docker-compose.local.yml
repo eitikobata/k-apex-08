@@ -1,0 +1,32 @@
+# Infra local pra desenvolvimento — NÃO é o que roda na VPS (lá é
+# postgres-shared/redis-shared via EasyPanel, compartilhado entre projetos).
+# Local, cada projeto tem sua própria infra isolada por simplicidade.
+#
+# Uso:
+#   docker compose -f docker-compose.local.yml up -d
+#   npx prisma migrate dev
+#   npm run start:dev
+
+version: '3.9'
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: kapex08
+      POSTGRES_PASSWORD: changeme
+      POSTGRES_DB: kapex08
+    ports:
+      - '5433:5432' # non-default host port to avoid clashing with a local Postgres
+    volumes:
+      - kapex08_postgres_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - '6380:6379' # non-default host port, same reasoning as above
+
+volumes:
+  kapex08_postgres_data:

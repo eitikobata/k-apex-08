@@ -1,0 +1,471 @@
+// K-APEX-08 — Prisma schema
+// Kobata Matrix Corporation internal security console
+//
+// Naming note: table/model names follow the fiction's naming (K-ID, K-BLACKTAPE, etc.)
+// to keep DB introspection readable in the same "voice" as the rest of the project.
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [vector]
+}
+
+// =========================================================================
+// K-ID — Operator identity & auth
+// =========================================================================
+
+enum OperatorRole {
+  ADMIN // full access, can approve SHATTER, manage operators
+  SENIOR_OPERATOR // can approve SPLICE and SHATTER
+  OPERATOR // can approve LATCH/SPLICE, view everything
+  OBSERVER // read-only
+}
+
+model Operator {
+  id           String       @id @default(uuid())
+  callsign     String       @unique // display / login name, e.g. "K.EITI"
+  email        String       @unique
+  passwordHash String // argon2id hash
+  role         OperatorRole @default(OPERATOR)
+
+  // Granular scoped permissions on top of role (e.g. "kuro_ice:approve_shatter")
+  permissions OperatorPermission[]
+
+  // MFA
+  totpSecret      String? // encrypted at rest in a real deploy; stored plain here for hobby scope, see README
+  totpEnabled     Boolean @default(false)
+  webauthnDevices WebauthnCredential[]
+
+  refreshTokens RefreshToken[]
+  authEvents    AuthEvent[]
+  rateLimitBucket RateLimitBucket?
+
+  incidentsResolved Incident[] @relation("ResolvedByOperator")
+  heartbeats        OperatorHeartbeat[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("operators")
+}
+
+model OperatorPermission {
+  id         String   @id @default(uuid())
+  operatorId String
+  operator   Operator @relation(fields: [operatorId], references: [id], onDelete: Cascade)
+  scope      String // e.g. "kuro_ice:approve_shatter", "k_directive:toggle_autonomous"
+  grantedAt  DateTime @default(now())
+
+  @@unique([operatorId, scope])
+  @@map("operator_permissions")
+}
+
+model RefreshToken {
+  id             String    @id @default(uuid())
+  operatorId     String
+  operator       Operator  @relation(fields: [operatorId], references: [id], onDelete: Cascade)
+  tokenHash      String    @unique // sha256 of the opaque token, never store raw
+  fingerprint    String // hash of IP + User-Agent at issuance
+  familyId       String // groups a rotation chain together, used for reuse-detection revocation
+  issuedAt       DateTime  @default(now())
+  expiresAt      DateTime
+  rotatedAt      DateTime?
+  revokedAt      DateTime?
+  revokedReason  String? // "ROTATED" | "REUSE_DETECTED" | "MANUAL_LOGOUT" | "FINGERPRINT_MISMATCH"
+  replacedByHash String?
+
+  @@index([operatorId])
+  @@index([familyId])
+  @@map("refresh_tokens")
+}
+
+model WebauthnCredential {
+  id           String   @id @default(uuid())
+  operatorId   String
+  operator     Operator @relation(fields: [operatorId], references: [id], onDelete: Cascade)
+  credentialId String   @unique
+  publicKey    Bytes
+  counter      BigInt   @default(0)
+  deviceLabel  String?
+  createdAt    DateTime @default(now())
+
+  @@map("webauthn_credentials")
+}
+
+model RateLimitBucket {
+  // One token bucket per operator (by callsign/email at login time, keyed post-lookup).
+  // Anonymous/pre-auth attempts are bucketed by IP in Redis, not here — this table
+  // only tracks the persisted, audit-relevant state for known accounts.
+  operatorId  String   @id
+  operator    Operator @relation(fields: [operatorId], references: [id], onDelete: Cascade)
+  tokens      Float    @default(10)
+  lastRefill  DateTime @default(now())
+  lockedUntil DateTime?
+  failCount   Int      @default(0)
+
+  @@map("rate_limit_buckets")
+}
+
+enum AuthEventType {
+  LOGIN_SUCCESS
+  LOGIN_FAILURE
+  MFA_SUCCESS
+  MFA_FAILURE
+  REFRESH_SUCCESS
+  REFRESH_REUSE_DETECTED
+  LOGOUT
+  SESSION_REVOKED
+  LOCKOUT_TRIGGERED
+  WEBAUTHN_REGISTERED
+  WEBAUTHN_SUCCESS
+  WEBAUTHN_FAILURE
+}
+
+model AuthEvent {
+  id         String        @id @default(uuid())
+  operatorId String?
+  operator   Operator?     @relation(fields: [operatorId], references: [id], onDelete: SetNull)
+  type       AuthEventType
+  ip         String?
+  userAgent  String?
+  metadata   Json?
+  createdAt  DateTime      @default(now())
+
+  @@index([operatorId])
+  @@index([type])
+  @@map("auth_events")
+}
+
+// =========================================================================
+// K-STREAM — simulated network nodes & raw events
+// =========================================================================
+
+model NetworkNode {
+  id                String   @id @default(uuid())
+  codeName          String   @unique // "NODE-47"
+  sector            Int
+  // Simulator personality parameters
+  baselineNoiseRate Float    @default(0.1) // 0..1, chance of harmless noise event per tick
+  severityBias      Float    @default(0.1) // 0..1, chance a generated event skews severe
+  isChronicallyFlaky Boolean @default(false)
+  lastHeartbeatAt   DateTime?
+  silenceStates     SilenceState[]
+  events            RawEvent[]
+  createdAt         DateTime @default(now())
+
+  @@map("network_nodes")
+}
+
+enum RawEventKind {
+  NOISE
+  ANOMALOUS_TRAFFIC
+  PRIVILEGED_ACCESS_ATTEMPT
+  NODE_SILENCE
+  AUTH_INTRUSION_ATTEMPT
+  ROGUE_AI_SIGNATURE
+}
+
+model RawEvent {
+  id         String       @id @default(uuid())
+  nodeId     String
+  node       NetworkNode  @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  kind       RawEventKind
+  payload    Json
+  // For rogue-AI events: a mutating signature marker used by the adaptive detector
+  signatureVector Json?
+  correlationTag  String? // groups a synthetic multi-stage attack sequence together
+  createdAt  DateTime     @default(now())
+
+  @@index([nodeId, createdAt])
+  @@index([correlationTag])
+  @@map("raw_events")
+}
+
+// =========================================================================
+// K-SILENCE — heartbeat monitoring for corp nodes
+// =========================================================================
+
+enum SilenceStatus {
+  ALIVE
+  RETRYING
+  CONFIRMED_SILENT
+  RESOLVED
+}
+
+model SilenceState {
+  id             String        @id @default(uuid())
+  nodeId         String
+  node           NetworkNode   @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  status         SilenceStatus @default(ALIVE)
+  attemptCount   Int           @default(0)
+  maxAttempts    Int           @default(3)
+  nextRetryAt    DateTime?
+  firstMissedAt  DateTime?
+  resolvedAt     DateTime?
+  escalatedIncidentId String?  @unique
+  escalatedIncident   Incident? @relation(fields: [escalatedIncidentId], references: [id])
+  attempts       SilenceRetryAttempt[]
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  @@map("silence_states")
+}
+
+model SilenceRetryAttempt {
+  id             String       @id @default(uuid())
+  silenceStateId String
+  silenceState   SilenceState @relation(fields: [silenceStateId], references: [id], onDelete: Cascade)
+  attemptNumber  Int
+  succeeded      Boolean
+  backoffMs      Int
+  attemptedAt    DateTime     @default(now())
+
+  @@map("silence_retry_attempts")
+}
+
+// =========================================================================
+// K-DIRECTIVE 08 — incidents & decisions
+// =========================================================================
+
+enum ThreatTier {
+  LATCH
+  SPLICE
+  SHATTER
+}
+
+enum IncidentStatus {
+  PENDING_CORRELATION
+  AWAITING_OPERATOR
+  AUTO_RESOLVING
+  RESOLVED
+  ESCALATED
+  ROGUE_AI_ACTIVE
+  ROGUE_AI_SPREAD
+}
+
+enum ResolutionOrigin {
+  MANUAL_OPERATOR
+  AUTO_TIMEOUT
+  MANUAL_TOGGLE_AUTONOMOUS
+  AUTO_LOW_SEVERITY
+}
+
+model Incident {
+  id            String         @id @default(uuid())
+  tier          ThreatTier
+  status        IncidentStatus @default(PENDING_CORRELATION)
+  kind          RawEventKind
+  correlationTag String?
+  summary       String? // short deterministic summary, always present (not the AI one)
+  contributingEventIds String[] // RawEvent ids that fed the correlation window
+
+  resolutionOrigin ResolutionOrigin?
+  resolvedByOperatorId String?
+  resolvedByOperator   Operator? @relation("ResolvedByOperator", fields: [resolvedByOperatorId], references: [id])
+  resolvedAt       DateTime?
+
+  rogueAiIncident  RogueAiIncident?
+  silenceState     SilenceState?
+  kuroIceActions   KuroIceAction[]
+  caseFile         CaseFile?
+
+  alarmFatigueDeprioritized Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+  @@index([tier])
+  @@map("incidents")
+}
+
+// =========================================================================
+// Rogue AI — multi-step containment state machine
+// =========================================================================
+
+enum RogueAiState {
+  DETECTED
+  CONTAINED_STEP_1
+  CONTAINED_STEP_2
+  NEUTRALIZED
+  ESCALATED
+  SPREAD
+}
+
+enum RogueAiCommand {
+  ISOLATE
+  TRACE
+  PURGE
+}
+
+model RogueAiIncident {
+  id           String       @id @default(uuid())
+  incidentId   String       @unique
+  incident     Incident     @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+  state        RogueAiState @default(DETECTED)
+  nodeId       String
+  expectedNextCommand RogueAiCommand?
+  stepDeadlineAt DateTime? // window to issue the next correct command
+  spreadToNodeId String? // set if it propagated laterally after a failed/expired step
+  resolvedAutonomously Boolean @default(false)
+  attempts     RogueAiCommandAttempt[]
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  @@map("rogue_ai_incidents")
+}
+
+model RogueAiCommandAttempt {
+  id                String          @id @default(uuid())
+  rogueAiIncidentId String
+  rogueAiIncident   RogueAiIncident @relation(fields: [rogueAiIncidentId], references: [id], onDelete: Cascade)
+  command           RogueAiCommand
+  wasExpected       Boolean
+  wasWithinDeadline Boolean
+  issuedByOperatorId String?
+  createdAt         DateTime        @default(now())
+
+  @@map("rogue_ai_command_attempts")
+}
+
+// =========================================================================
+// KURO-ICE — countermeasure execution
+// =========================================================================
+
+enum KuroIceTier {
+  LATCH
+  SPLICE
+  SHATTER
+}
+
+enum KuroIceStatus {
+  PENDING
+  ESTABLISHING_LINK
+  EXECUTED
+  FAILED
+}
+
+model KuroIceAction {
+  id         String        @id @default(uuid())
+  incidentId String
+  incident   Incident      @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+  tier       KuroIceTier
+  status     KuroIceStatus @default(PENDING)
+  actionType String // "ISOLATE_NODE" | "BLOCK_TRAFFIC" | "FLAG_ONLY" | "PREEMPTIVE_NODE_LOCKDOWN"
+  triggeredByAutonomous Boolean @default(false)
+  startedAt  DateTime?
+  completedAt DateTime?
+  resultDetail Json?
+
+  @@map("kuro_ice_actions")
+}
+
+// =========================================================================
+// K-BLACKBOX — resolved case archive with semantic search
+// =========================================================================
+
+model CaseFile {
+  id           String   @id @default(uuid())
+  incidentId   String   @unique
+  incident     Incident @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+  aiSummary    String? // narrative summary, generated async, optional
+  aiSummaryFailed Boolean @default(false)
+  embedding    Unsupported("vector(1536)")?
+  createdAt    DateTime @default(now())
+
+  @@map("case_files")
+}
+
+// =========================================================================
+// K-BLACKTAPE — immutable audit trail (append-only by convention;
+// enforced at the application layer, see BlacktapeService)
+// =========================================================================
+
+model BlacktapeEntry {
+  id         String   @id @default(uuid())
+  category   String // "AUTH" | "INCIDENT" | "KURO_ICE" | "K_SILENCE" | "K_DIRECTIVE" | "ROGUE_AI"
+  action     String
+  actorType  String // "OPERATOR" | "SYSTEM" | "K_DIRECTIVE_AUTONOMOUS"
+  actorId    String?
+  targetType String?
+  targetId   String?
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  @@index([category])
+  @@index([targetType, targetId])
+  @@map("blacktape_entries")
+}
+
+// =========================================================================
+// K-DIRECTIVE — autonomous mode / dead man's switch state + operator heartbeat
+// =========================================================================
+
+model SystemState {
+  // Single-row table (id fixed to "singleton") holding the current autonomous
+  // mode flag. Kept separate from Operator so it's a clean global toggle.
+  id                 String   @id @default("singleton")
+  autonomousModeActive Boolean @default(false)
+  activatedAt        DateTime?
+  activatedOrigin    ResolutionOrigin?
+  activatedByOperatorId String?
+
+  @@map("system_state")
+}
+
+model OperatorHeartbeat {
+  id         String   @id @default(uuid())
+  operatorId String
+  operator   Operator @relation(fields: [operatorId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+
+  @@index([operatorId, createdAt])
+  @@map("operator_heartbeats")
+}
+
+// =========================================================================
+// Outbox pattern — transactional write + guaranteed stream publish
+// =========================================================================
+
+enum OutboxStatus {
+  PENDING
+  PUBLISHED
+  FAILED
+}
+
+model OutboxEvent {
+  id          String       @id @default(uuid())
+  streamKey   String // target Redis stream, e.g. "kapex08:k-stream:incidents"
+  eventType   String
+  payload     Json
+  status      OutboxStatus @default(PENDING)
+  attempts    Int          @default(0)
+  lastError   String?
+  createdAt   DateTime     @default(now())
+  publishedAt DateTime?
+
+  @@index([status])
+  @@map("outbox_events")
+}
+
+// =========================================================================
+// Idempotency guard for BullMQ job processing
+// =========================================================================
+
+model ProcessedJob {
+  // Composite natural key: queue name + job's idempotency key.
+  // A job handler checks this before applying side effects and writes to it
+  // in the same DB transaction as the side effect.
+  id             String   @id @default(uuid())
+  queueName      String
+  idempotencyKey String
+  processedAt    DateTime @default(now())
+
+  @@unique([queueName, idempotencyKey])
+  @@map("processed_jobs")
+}

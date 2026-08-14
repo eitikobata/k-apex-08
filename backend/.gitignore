@@ -1,0 +1,33 @@
+# dependencies
+node_modules/
+
+# build output
+dist/
+build/
+
+# env
+.env
+.env.local
+.env.*.local
+
+# prisma
+prisma/*.db
+
+# logs
+*.log
+npm-debug.log*
+
+# coverage / mutation reports
+coverage/
+reports/
+.stryker-tmp/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+
+# misc
+*.tsbuildinfo
