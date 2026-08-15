@@ -9,12 +9,12 @@ export interface EnrichmentResult {
 }
 
 /**
- * NOTE (honesty flag): this talks to the Anthropic Messages API using the
- * documented request/response shape. It has NOT been run against a live key
- * in this sandbox (no key configured here) — the HTTP plumbing and error
- * handling are real, but you're the first one to see it hit the network.
- * If the response shape has drifted, the circuit breaker will just treat
- * repeated parse failures as failures and open — it won't wedge anything.
+ * NOTE (honesty flag): this talks to the Gemini generateContent API using
+ * the documented request/response shape. It has NOT been run against a
+ * live key in this sandbox — the HTTP plumbing and error handling are
+ * real, but hasn't been confirmed against a live response yet. If the
+ * response shape has drifted, the circuit breaker just treats repeated
+ * parse failures as failures and opens — it won't wedge anything.
  */
 @Injectable()
 export class AiEnrichmentService {
@@ -48,35 +48,40 @@ export class AiEnrichmentService {
   }
 
   private async callSummaryApi(incidentContext: Record<string, unknown>, apiKey: string): Promise<string> {
-    const baseUrl = this.config.get<string>('AI_PROVIDER_BASE_URL', 'https://api.anthropic.com');
+    const baseUrl = this.config.get<string>(
+      'AI_PROVIDER_BASE_URL',
+      'https://generativelanguage.googleapis.com',
+    );
+    const model = this.config.get<string>('AI_PROVIDER_MODEL', 'gemini-2.0-flash');
+
     const prompt = [
       'You are K-BLACKBOX, the case-archive narrator for a fictional corporate security console.',
       'Write a terse, noir-toned 2-3 sentence incident summary from this JSON, in English:',
       JSON.stringify(incidentContext),
     ].join('\n');
 
-    const response = await fetch(`${baseUrl}/v1/messages`, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
+    const response = await fetch(
+      `${baseUrl}/v1beta/models/${model}:generateContent?key=${apiKey}`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ role: 'user', parts: [{ text: prompt }] }],
+          generationConfig: { maxOutputTokens: 300 },
+        }),
       },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-6',
-        max_tokens: 300,
-        messages: [{ role: 'user', content: prompt }],
-      }),
-    });
+    );
 
     if (!response.ok) {
       throw new Error(`AI provider responded ${response.status}`);
     }
 
-    const data = (await response.json()) as { content?: { type: string; text?: string }[] };
-    const text = data.content?.find((block) => block.type === 'text')?.text;
+    const data = (await response.json()) as {
+      candidates?: { content?: { parts?: { text?: string }[] } }[];
+    };
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
     if (!text) {
-      throw new Error('AI provider response had no text content block');
+      throw new Error('AI provider response had no text content');
     }
     return text;
   }

@@ -2,6 +2,8 @@ import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
 import { AutonomousModeService } from './autonomous-mode.service';
 import { JwtAuthGuard } from '../k-id/guards/jwt-auth.guard';
 import { CurrentOperator, AuthenticatedOperator } from '../k-id/decorators/current-operator.decorator';
+import { RolesGuard } from '../k-id/guards/roles.guard';
+import { Roles } from '../k-id/decorators/roles.decorator';
 
 @Controller('k-directive')
 @UseGuards(JwtAuthGuard)
@@ -14,6 +16,8 @@ export class KDirectiveController {
   }
 
   /** The manual "GO AUTONOMOUS" / "STAND DOWN" button from the console UI. */
+  @UseGuards(RolesGuard)
+  @Roles('ADMIN', 'SENIOR_OPERATOR', 'OPERATOR')
   @Post('autonomous-mode/toggle')
   async toggle(@Body('active') active: boolean, @CurrentOperator() operator: AuthenticatedOperator) {
     await this.autonomousMode.manualToggle(active, operator.id);
