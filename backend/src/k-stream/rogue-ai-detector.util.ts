@@ -26,6 +26,11 @@ export function detectRogueAiAdaptiveSignature(
   if (driftFactorsInOrder.length < options.minSamples) return false;
 
   let regressions = 0;
+  // Stryker disable next-line EqualityOperator: confirmed equivalent mutant.
+  // `i < length` vs `i <= length` only differ on one extra iteration where
+  // `driftFactorsInOrder[length]` is `undefined`. `undefined < anything` is
+  // always `false` in JS, so that extra iteration never increments
+  // `regressions` — output is identical either way.
   for (let i = 1; i < driftFactorsInOrder.length; i += 1) {
     if (driftFactorsInOrder[i] < driftFactorsInOrder[i - 1]) {
       regressions += 1;

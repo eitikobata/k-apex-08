@@ -9,6 +9,7 @@ import { AutonomousModeService } from './autonomous-mode.service';
 import { RogueAiService } from '../rogue-ai/rogue-ai.service';
 import { KuroIceService } from '../kuro-ice/kuro-ice.service';
 import { decideIncidentHandling } from './decision.util';
+import { KBlackboxService } from '../k-blackbox/k-blackbox.service';
 
 const INCIDENTS_STREAM = 'kapex08:k-directive:incidents';
 const CONSUMER_GROUP = 'k-directive-processor';
@@ -21,15 +22,16 @@ export class KDirectiveService implements OnModuleInit {
   private readonly logger = new Logger(KDirectiveService.name);
   private running = false;
 
-  constructor(
-    @Inject(REDIS_CLIENT) private readonly redis: Redis,
-    private readonly prisma: PrismaService,
-    private readonly blacktape: BlacktapeService,
-    private readonly idempotency: IdempotencyService,
-    private readonly autonomousMode: AutonomousModeService,
-    private readonly rogueAi: RogueAiService,
-    private readonly kuroIce: KuroIceService,
-  ) {}
+    constructor(
+        @Inject(REDIS_CLIENT) private readonly redis: Redis,
+        private readonly prisma: PrismaService,
+        private readonly blacktape: BlacktapeService,
+        private readonly idempotency: IdempotencyService,
+        private readonly autonomousMode: AutonomousModeService,
+        private readonly rogueAi: RogueAiService,
+        private readonly kuroIce: KuroIceService,
+        private readonly kBlackbox: KBlackboxService,
+      ) {}
 
   async onModuleInit(): Promise<void> {
     try {
@@ -107,15 +109,21 @@ export class KDirectiveService implements OnModuleInit {
     // Rogue AI incidents follow their own state machine (see RogueAiService)
     // — K-DIRECTIVE's only job for them is: if autonomous mode is active,
     // resolve immediately without waiting for a command sequence.
-    if (incident.rogueAiIncident) {
-      await this.prisma.incident.update({ where: { id: incidentId }, data: { status: 'ROGUE_AI_ACTIVE' } });
-      if (systemState.autonomousModeActive) {
-        await this.rogueAi.resolveAutonomously(incident.rogueAiIncident.id);
-      } else {
-        await this.notifyGateway('INCIDENT_AWAITING_OPERATOR', { incidentId, tier: incident.tier, rogueAi: true });
-      }
-      return;
-    }
+      if (incident.rogueAiIncident) {
+            await this.prisma.incident.update({ where: { id: incidentId }, data: { status: 'ROGUE_AI_ACTIVE' } });
+            if (systemState.autonomousModeActive) {
+              await this.rogueAi.resolveAutonomously(incident.rogueAiIncident.id);
+            } else {
+              await this.rogueAi.refreshDeadlineOnNotify(incident.rogueAiIncident.id);
+              await this.notifyGateway('INCIDENT_AWAITING_OPERATOR', {
+                incidentId,
+                tier: incident.tier,
+                rogueAi: true,
+                rogueAiIncidentId: incident.rogueAiIncident.id,
+              });
+            }
+            return;
+          }
 
     const decision = decideIncidentHandling(incident.tier, systemState.autonomousModeActive);
 
@@ -184,11 +192,9 @@ export class KDirectiveService implements OnModuleInit {
       triggeredByAutonomous: false,
     });
 
-    await this.prisma.incident.update({
-      where: { id: incidentId },
-      data: { status: 'RESOLVED', resolvedAt: new Date() },
-    });
-  }
+    await this.prisma.incident.update({ where: { id: incidentId }, data: { status: 'RESOLVED', resolvedAt: new Date() } });
+        await this.kBlackbox.archiveResolvedIncident(incidentId);
+      }
 
   private async notifyGateway(eventType: string, payload: Record<string, unknown>): Promise<void> {
     await this.redis.publish(GATEWAY_EVENTS_CHANNEL, JSON.stringify({ eventType, payload }));

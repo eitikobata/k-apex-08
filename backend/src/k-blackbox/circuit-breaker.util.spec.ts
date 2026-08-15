@@ -46,16 +46,30 @@ describe('circuit breaker', () => {
     expect(result.state.state).toBe('HALF_OPEN');
   });
 
+  it('treats a missing openedAtMs as already past cooldown (defensive default)', () => {
+    // Shouldn't normally happen (OPEN always sets openedAtMs), but if it
+    // ever does, the breaker should fail open toward "allow a trial" rather
+    // than getting permanently stuck denying forever.
+    const openStateNoTimestamp: CircuitBreakerState = { state: 'OPEN', consecutiveFailures: 3, openedAtMs: null };
+    const result = checkAllowRequest(openStateNoTimestamp, CONFIG, 0);
+    expect(result.allowed).toBe(true);
+    expect(result.state.state).toBe('HALF_OPEN');
+  });
+
   it('HALF_OPEN success closes the circuit', () => {
     const halfOpen: CircuitBreakerState = { state: 'HALF_OPEN', consecutiveFailures: 3, openedAtMs: 1000 };
     const result = recordOutcome(halfOpen, CONFIG, true, 5000);
     expect(result).toEqual({ state: 'CLOSED', consecutiveFailures: 0, openedAtMs: null });
   });
 
-  it('HALF_OPEN failure re-opens the circuit with a fresh openedAtMs', () => {
+  it('HALF_OPEN failure re-opens the circuit with consecutiveFailures pinned to the threshold', () => {
     const halfOpen: CircuitBreakerState = { state: 'HALF_OPEN', consecutiveFailures: 3, openedAtMs: 1000 };
     const result = recordOutcome(halfOpen, CONFIG, false, 5000);
-    expect(result.state).toBe('OPEN');
-    expect(result.openedAtMs).toBe(5000);
+    // Asserting the full object (not just state/openedAtMs) matters here:
+    // if the HALF_OPEN branch were skipped, execution would fall through to
+    // the generic "increment failures" path and report consecutiveFailures=4
+    // instead of being pinned to the threshold (3) — same state/openedAtMs,
+    // different count.
+    expect(result).toEqual({ state: 'OPEN', consecutiveFailures: CONFIG.failureThreshold, openedAtMs: 5000 });
   });
 });

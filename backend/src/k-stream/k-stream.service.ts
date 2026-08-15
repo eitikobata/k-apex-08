@@ -193,17 +193,20 @@ export class KStreamService implements OnModuleInit {
         },
       });
 
-      if (params.isRogueAi && params.rogueAiNodeId) {
-        await tx.rogueAiIncident.create({
-          data: {
-            incidentId: incident.id,
-            nodeId: params.rogueAiNodeId,
-            state: 'DETECTED',
-            expectedNextCommand: 'ISOLATE',
-            stepDeadlineAt: new Date(Date.now() + 30_000),
-          },
-        });
-      }
+        if (params.isRogueAi && params.rogueAiNodeId) {
+                await tx.rogueAiIncident.create({
+                  data: {
+                    incidentId: incident.id,
+                    nodeId: params.rogueAiNodeId,
+                    state: 'DETECTED',
+                    expectedNextCommand: 'ISOLATE',
+                    // Deliberately no deadline yet — the countdown only starts when
+                    // K-DIRECTIVE actually notifies the operator (refreshDeadlineOnNotify),
+                    // not at detection time. Otherwise a busy K-DIRECTIVE queue can
+                    // let the deadline expire before the operator ever sees it.
+                  },
+                });
+              }
 
       await this.outbox.write(tx, {
         streamKey: INCIDENTS_STREAM,

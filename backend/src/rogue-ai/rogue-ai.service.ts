@@ -5,9 +5,10 @@ import { BlacktapeService } from '../common/blacktape/blacktape.service';
 import { OutboxService } from '../common/outbox/outbox.service';
 import { REDIS_CLIENT } from '../common/redis/redis.module';
 import type { Redis } from 'ioredis';
+import { KBlackboxService } from '../k-blackbox/k-blackbox.service';
 import { transitionRogueAi, RogueAiCommand, RogueAiState } from './rogue-ai-state-machine.util';
 
-const STEP_WINDOW_MS = 15_000;
+export const STEP_WINDOW_MS = 15_000;
 const DEADLINE_SWEEP_INTERVAL_MS = 2000;
 const GATEWAY_EVENTS_CHANNEL = 'kapex08:gateway:events';
 
@@ -31,6 +32,7 @@ export class RogueAiService {
     private readonly blacktape: BlacktapeService,
     private readonly outbox: OutboxService,
     @Inject(REDIS_CLIENT) private readonly redis: Redis,
+    private readonly kBlackbox: KBlackboxService,
   ) {}
 
   async issueCommand(
@@ -105,6 +107,8 @@ export class RogueAiService {
       });
     });
 
+    await this.kBlackbox.archiveResolvedIncident(record.incidentId);
+
     await this.blacktape.record({
       category: 'ROGUE_AI',
       action: 'RESOLVED_AUTONOMOUSLY',
@@ -115,6 +119,23 @@ export class RogueAiService {
     });
 
     await this.publishGatewayEvent('ROGUE_AI_RESOLVED_AUTONOMOUSLY', { rogueAiIncidentId, nodeId: record.nodeId });
+  }
+
+  /**
+   * Called by K-DIRECTIVE right before it notifies the operator. The
+   * deadline recorded at detection time (by K-STREAM) can go stale while
+   * the incident sits in K-DIRECTIVE's processing queue — refreshing it
+   * here means the operator's countdown starts when they're actually
+   * told, not when the system silently noticed.
+   */
+  async refreshDeadlineOnNotify(rogueAiIncidentId: string): Promise<void> {
+    const record = await this.prisma.rogueAiIncident.findUnique({ where: { id: rogueAiIncidentId } });
+    if (!record || record.state !== 'DETECTED') return;
+
+    await this.prisma.rogueAiIncident.update({
+      where: { id: rogueAiIncidentId },
+      data: { stepDeadlineAt: new Date(Date.now() + STEP_WINDOW_MS) },
+    });
   }
 
   private async applyTransition(
@@ -161,6 +182,10 @@ export class RogueAiService {
         });
       }
     });
+
+    if (transition.nextState === 'NEUTRALIZED') {
+      await this.kBlackbox.archiveResolvedIncident(record.incidentId);
+    }
 
     await this.blacktape.record({
       category: 'ROGUE_AI',

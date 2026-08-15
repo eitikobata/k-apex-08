@@ -22,6 +22,12 @@ export interface ConsumeResult {
 }
 
 export function refill(state: TokenBucketState, config: TokenBucketConfig, nowMs: number): TokenBucketState {
+  // Stryker disable next-line EqualityOperator: confirmed equivalent mutant.
+  // `<=` vs `<` only differ at the exact instant nowMs === lastRefillMs. At
+  // that exact point the "fall through and compute anyway" path produces
+  // elapsedMs=0, regenerated=0, and lastRefillMs=nowMs — numerically
+  // identical output to the early-return guard below. No input can tell
+  // the two apart.
   if (nowMs <= state.lastRefillMs) {
     // Clock didn't move forward (or went backward) — no refill, state unchanged.
     return state;

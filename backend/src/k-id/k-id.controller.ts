@@ -6,6 +6,7 @@ import { LoginDto } from './dto/login.dto';
 import { VerifyMfaDto } from './dto/verify-mfa.dto';
 import { RefreshDto } from './dto/refresh.dto';
 import { RegisterOperatorDto } from './dto/register-operator.dto';
+import { VerifyTotpSetupDto } from './dto/verify-totp-setup.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { RolesGuard } from './guards/roles.guard';
 import { Roles } from './decorators/roles.decorator';
@@ -42,6 +43,11 @@ export class KIdController {
     return this.kId.completeLoginWithTotp(dto.mfaPendingToken, dto.totpCode, requestContext(req));
   }
 
+  @Post('totp/setup-confirm')
+  async confirmTotpSetup(@Body() dto: VerifyTotpSetupDto, @Req() req: Request) {
+    return this.kId.completeTotpSetup(dto.totpSetupToken, dto.totpCode, requestContext(req));
+  }
+
   @Post('refresh')
   async refresh(@Body() dto: RefreshDto, @Req() req: Request) {
     return this.kId.refreshSession(dto.refreshToken, requestContext(req));
@@ -52,13 +58,6 @@ export class KIdController {
   async logout(@CurrentOperator() operator: AuthenticatedOperator) {
     await this.kId.logout(operator.id);
     return { status: 'ok' };
-  }
-
-  @UseGuards(JwtAuthGuard)
-  @Post('totp/confirm')
-  async confirmTotp(@CurrentOperator() operator: AuthenticatedOperator, @Body('totpCode') totpCode: string) {
-    await this.kId.enableTotp(operator.id, totpCode);
-    return { status: 'enrolled' };
   }
 
   @UseGuards(JwtAuthGuard)

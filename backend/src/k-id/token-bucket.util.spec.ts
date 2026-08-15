@@ -14,6 +14,14 @@ describe('token-bucket.util', () => {
       expect(state.tokens).toBe(3);
     });
 
+    it('computes elapsed time correctly from a non-zero lastRefillMs', () => {
+      // lastRefillMs=0 in the tests above can't distinguish `nowMs - lastRefillMs`
+      // from `nowMs + lastRefillMs` (adding zero is a no-op) — this uses a
+      // non-zero baseline so subtraction vs addition actually diverge.
+      const state = refill({ tokens: 0, lastRefillMs: 5000 }, CONFIG, 8000);
+      expect(state.tokens).toBe(3); // elapsed = 3000ms => 3 tokens at 1/sec
+    });
+
     it('is a no-op when now equals lastRefillMs', () => {
       const state = refill({ tokens: 4, lastRefillMs: 500 }, CONFIG, 500);
       expect(state).toEqual({ tokens: 4, lastRefillMs: 500 });

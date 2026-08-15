@@ -32,6 +32,13 @@ describe('evaluateSlidingWindow', () => {
     expect(result.countedTimestampsMs).toEqual([1000]);
     expect(result.triggered).toBe(false);
   });
+
+  it('sorts the counted timestamps ascending even when input arrives out of order', () => {
+    // Deliberately scrambled input — proves the function sorts by value
+    // instead of trusting (or silently preserving) array/insertion order.
+    const result = evaluateSlidingWindow([20000, 9999, 15000, 10000], 20000, config);
+    expect(result.countedTimestampsMs).toEqual([10000, 15000, 20000]);
+  });
 });
 
 describe('detectMultiStageAttack', () => {
@@ -84,5 +91,50 @@ describe('detectMultiStageAttack', () => {
 
   it('returns false for an empty event list', () => {
     expect(detectMultiStageAttack([], windowMs)).toBe(false);
+  });
+
+  it('sorts out-of-order input before evaluating the sequence', () => {
+    const events = [
+      { kind: 'PRIVILEGED_ACCESS_ATTEMPT' as const, timestampMs: 20_000 },
+      { kind: 'NODE_SILENCE' as const, timestampMs: 0 },
+      { kind: 'ANOMALOUS_TRAFFIC' as const, timestampMs: 10_000 },
+    ];
+    expect(detectMultiStageAttack(events, 60_000)).toBe(true);
+  });
+
+  it('keeps evaluating after the sequence completes (extra trailing event)', () => {
+    const events = [
+      { kind: 'NODE_SILENCE' as const, timestampMs: 0 },
+      { kind: 'ANOMALOUS_TRAFFIC' as const, timestampMs: 10_000 },
+      { kind: 'PRIVILEGED_ACCESS_ATTEMPT' as const, timestampMs: 20_000 },
+      { kind: 'NODE_SILENCE' as const, timestampMs: 25_000 }, // trailing noise after completion
+    ];
+    expect(detectMultiStageAttack(events, 60_000)).toBe(true);
+  });
+
+  it('tracks the first-stage timestamp correctly at a large non-zero base, and allows a gap exactly equal to the window', () => {
+    // Timestamps starting near 0 accidentally hide a null->0 coercion bug:
+    // if `firstStageTs` were never actually captured, `event.timestampMs - null`
+    // still evaluates to a small, plausible-looking number when timestamps
+    // start near 0. A large base timestamp is what actually exposes that class
+    // of bug — see the exact incident this class of issue caused in K-DIRECTIVE
+    // (Rogue AI deadline going stale in a busy queue).
+    const base = 100_000;
+    const events = [
+      { kind: 'NODE_SILENCE' as const, timestampMs: base },
+      { kind: 'ANOMALOUS_TRAFFIC' as const, timestampMs: base + 5_000 },
+      { kind: 'PRIVILEGED_ACCESS_ATTEMPT' as const, timestampMs: base + 10_000 }, // exactly at the window boundary
+    ];
+    expect(detectMultiStageAttack(events, 10_000)).toBe(true);
+  });
+
+  it('rejects when the gap from the first stage exceeds the window by just 1ms', () => {
+    const base = 100_000;
+    const events = [
+      { kind: 'NODE_SILENCE' as const, timestampMs: base },
+      { kind: 'ANOMALOUS_TRAFFIC' as const, timestampMs: base + 5_000 },
+      { kind: 'PRIVILEGED_ACCESS_ATTEMPT' as const, timestampMs: base + 10_001 },
+    ];
+    expect(detectMultiStageAttack(events, 10_000)).toBe(false);
   });
 });

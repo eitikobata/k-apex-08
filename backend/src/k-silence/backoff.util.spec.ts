@@ -13,8 +13,8 @@ describe('computeBackoffMs', () => {
     expect(computeBackoffMs(3, 1000, 2)).toBe(4000);
   });
 
-  it('throws for attemptNumber below 1', () => {
-    expect(() => computeBackoffMs(0)).toThrow(RangeError);
-    expect(() => computeBackoffMs(-1)).toThrow(RangeError);
+  it('throws with the exact reason for attemptNumber below 1', () => {
+    expect(() => computeBackoffMs(0)).toThrow('attemptNumber must be >= 1');
+    expect(() => computeBackoffMs(-1)).toThrow('attemptNumber must be >= 1');
   });
 });

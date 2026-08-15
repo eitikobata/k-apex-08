@@ -17,6 +17,22 @@ describe('transitionRogueAi', () => {
     expect(result.nextDeadlineMs).toBe(5000 + STEP_WINDOW_MS);
   });
 
+  it('advances CONTAINED_STEP_1 -> CONTAINED_STEP_2 on correct TRACE within window', () => {
+    // Distinct from the ISOLATE test above — proves the second entry of
+    // STATE_AFTER_STEP maps to CONTAINED_STEP_2, not just that *some*
+    // progression happens.
+    const result = transitionRogueAi({
+      state: 'CONTAINED_STEP_1',
+      expectedNextCommand: 'TRACE',
+      stepDeadlineMs: 10_000,
+      event: { type: 'COMMAND_ISSUED', command: 'TRACE', nowMs: 5000 },
+      stepWindowMs: STEP_WINDOW_MS,
+    });
+    expect(result.outcome).toBe('ADVANCED');
+    expect(result.nextState).toBe('CONTAINED_STEP_2');
+    expect(result.nextExpectedCommand).toBe('PURGE');
+  });
+
   it('walks the full happy path to NEUTRALIZED', () => {
     let state: 'DETECTED' | 'CONTAINED_STEP_1' | 'CONTAINED_STEP_2' = 'DETECTED';
     let expected = initialExpectedCommand();
@@ -85,6 +101,20 @@ describe('transitionRogueAi', () => {
       expectedNextCommand: 'ISOLATE',
       stepDeadlineMs: 10_000,
       event: { type: 'COMMAND_ISSUED', command: 'ISOLATE', nowMs: 10_000 },
+      stepWindowMs: STEP_WINDOW_MS,
+    });
+    expect(result.outcome).toBe('ADVANCED');
+  });
+
+  it('does not treat a null deadline as already expired when a command arrives', () => {
+    // This is exactly the real bug K-DIRECTIVE hit: a freshly-created
+    // incident with no deadline set yet must not be short-circuited into
+    // DEADLINE_EXPIRED just because `nowMs > null` coerces to true.
+    const result = transitionRogueAi({
+      state: 'DETECTED',
+      expectedNextCommand: 'ISOLATE',
+      stepDeadlineMs: null,
+      event: { type: 'COMMAND_ISSUED', command: 'ISOLATE', nowMs: 999_999 },
       stepWindowMs: STEP_WINDOW_MS,
     });
     expect(result.outcome).toBe('ADVANCED');

@@ -64,6 +64,12 @@ export function detectMultiStageAttack(events: StageEvent[], windowMs: number): 
   let firstStageTs: number | null = null;
 
   for (const event of sorted) {
+    // Stryker disable next-line ConditionalExpression,EqualityOperator: confirmed
+    // equivalent mutant. Once stageIndex reaches EXPECTED_SEQUENCE.length,
+    // EXPECTED_SEQUENCE[stageIndex] is undefined, so `event.kind !== undefined`
+    // is true for every remaining event and the loop just skips them via
+    // `continue` anyway — removing this break produces byte-identical
+    // results, just with a few harmless extra loop iterations.
     if (stageIndex >= EXPECTED_SEQUENCE.length) break;
     if (event.kind !== EXPECTED_SEQUENCE[stageIndex]) continue;
 

@@ -1,9 +1,11 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { authenticator } from 'otplib';
 
 @Injectable()
 export class TotpService {
+  private readonly logger = new Logger(TotpService.name);
+
   constructor(private readonly config: ConfigService) {}
 
   generateSecret(): string {
@@ -16,6 +18,11 @@ export class TotpService {
   }
 
   verify(token: string, secret: string): boolean {
+    if (this.isDevBypassActive()) {
+      this.logger.warn(`⚠ TOTP DEV BYPASS active — code "${token}" accepted without real verification`);
+      return true;
+    }
+
     try {
       return authenticator.verify({ token, secret });
     } catch {
@@ -23,4 +30,11 @@ export class TotpService {
       return false;
     }
   }
-}
+
+  private isDevBypassActive(): boolean {
+    const bypassEnabled = this.config.get<string>('AUTH_DEV_MFA_BYPASS') === 'true';
+    const isProduction = this.config.get<string>('NODE_ENV') === 'production';
+    return bypassEnabled && !isProduction;
+  }
+}`
+`

@@ -77,7 +77,7 @@ export class KSilenceScannerService {
     await this.retryQueue.add(
       'retry-heartbeat',
       { silenceStateId, attemptNumber },
-      { delay: delayMs, jobId: `${silenceStateId}:${attemptNumber}` },
+      { delay: delayMs, jobId: `${silenceStateId}-${attemptNumber}` },
     );
   }
 

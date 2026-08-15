@@ -49,7 +49,7 @@ export class WebauthnService {
   }
 
   private challengeKey(operatorId: string, purpose: 'reg' | 'auth'): string {
-    return `webauthn:challenge:${purpose}:${operatorId}`;
+    return `kapex08:webauthn:challenge:${purpose}:${operatorId}`;
   }
 
   async generateRegistrationOptionsFor(operatorId: string): Promise<PublicKeyCredentialCreationOptionsJSON> {

@@ -16,7 +16,7 @@ export interface RequestContext {
 
 export type LoginStep1Result =
   | { status: 'MFA_REQUIRED'; mfaPendingToken: string }
-  | { status: 'MFA_SETUP_REQUIRED'; operatorId: string };
+  | { status: 'MFA_SETUP_REQUIRED'; totpSetupToken: string; totpKeyUri: string };
 
 const ARGON2ID_OPTS: argon2.Options = {
   type: argon2.argon2id,
@@ -56,6 +56,20 @@ export class KIdService {
   async loginStep1(callsign: string, password: string, ctx: RequestContext): Promise<LoginStep1Result> {
     const operator = await this.prisma.operator.findUnique({ where: { callsign } });
 
+    // Lockout check happens BEFORE password verification, and applies to
+    // every attempt — not just ones where the password turns out correct.
+    // Checking this only after a successful password check would mean a
+    // brute-force attacker (who never gets the password right) never trips
+    // the lockout at all, defeating the entire point of it.
+    if (operator) {
+      const gate = await this.rateLimit.checkAndConsume(operator.id);
+      if (!gate.allowed) {
+        throw new ForbiddenException(
+          `Too many attempts. Locked until ${gate.lockedUntil?.toISOString() ?? 'further notice'}`,
+        );
+      }
+    }
+
     // Deliberately do the same amount of work (argon2 verify against a dummy
     // hash) even when the callsign doesn't exist, so login timing doesn't
     // leak whether an account exists.
@@ -77,13 +91,6 @@ export class KIdService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    const rateLimitResult = await this.rateLimit.checkAndConsume(operator.id);
-    if (!rateLimitResult.allowed) {
-      throw new ForbiddenException(
-        `Too many attempts. Locked until ${rateLimitResult.lockedUntil?.toISOString() ?? 'further notice'}`,
-      );
-    }
-
     await this.rateLimit.registerSuccess(operator.id);
     await this.blacktape.record({
       category: 'AUTH',
@@ -94,8 +101,14 @@ export class KIdService {
     });
 
     if (!operator.totpEnabled) {
-      // First login: operator must finish TOTP enrollment before a session is issued.
-      return { status: 'MFA_SETUP_REQUIRED', operatorId: operator.id };
+      // First login: no session yet, but we still need a token so the
+      // operator can prove who they are when confirming TOTP enrollment.
+      const totpSetupToken = await this.jwt.signAsync(
+        { sub: operator.id, type: 'totp_setup_pending' },
+        { expiresIn: '10m' },
+      );
+      const totpKeyUri = operator.totpSecret ? this.totp.keyUri(operator.email, operator.totpSecret) : '';
+      return { status: 'MFA_SETUP_REQUIRED', totpSetupToken, totpKeyUri };
     }
 
     const mfaPendingToken = await this.jwt.signAsync(
@@ -143,6 +156,25 @@ export class KIdService {
       metadata: { ip: ctx.ip },
     });
 
+    const fingerprint = fingerprintOf(ctx.ip, ctx.userAgent);
+    return this.tokens.issuePair(operator.id, operator.role, fingerprint);
+  }
+
+  /** Confirms TOTP enrollment and, on success, logs the operator straight in. */
+  async completeTotpSetup(totpSetupToken: string, totpCode: string, ctx: RequestContext): Promise<IssuedTokenPair> {
+    let payload: { sub: string; type: string };
+    try {
+      payload = await this.jwt.verifyAsync(totpSetupToken);
+    } catch {
+      throw new UnauthorizedException('TOTP setup challenge expired or invalid');
+    }
+    if (payload.type !== 'totp_setup_pending') {
+      throw new UnauthorizedException('Invalid TOTP setup challenge token');
+    }
+
+    await this.enableTotp(payload.sub, totpCode);
+
+    const operator = await this.prisma.operator.findUniqueOrThrow({ where: { id: payload.sub } });
     const fingerprint = fingerprintOf(ctx.ip, ctx.userAgent);
     return this.tokens.issuePair(operator.id, operator.role, fingerprint);
   }
