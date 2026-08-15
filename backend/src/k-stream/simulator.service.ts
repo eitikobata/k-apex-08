@@ -30,7 +30,16 @@ export class SimulatorService implements OnModuleInit {
   ) {}
 
   async onModuleInit(): Promise<void> {
-    await this.ensureSeedNodes();
+    try {
+      await this.ensureSeedNodes();
+    } catch (err) {
+      this.logger.error(
+        `Failed to seed network nodes (database may not be migrated yet): ${(err as Error).message}`,
+      );
+      // Deliberately swallow this — a missing/unmigrated table shouldn't crash
+      // the whole app. The @Interval tick will keep retrying seeding on its
+      // own schedule once the schema exists.
+    }
   }
 
   private async ensureSeedNodes(): Promise<void> {
@@ -56,7 +65,13 @@ export class SimulatorService implements OnModuleInit {
 
   @Interval(TICK_MS)
   async tick(): Promise<void> {
-    const nodes = await this.prisma.networkNode.findMany();
+    let nodes: Awaited<ReturnType<typeof this.prisma.networkNode.findMany>>;
+    try {
+      nodes = await this.prisma.networkNode.findMany();
+    } catch (err) {
+      this.logger.error(`Tick skipped — network_nodes query failed: ${(err as Error).message}`);
+      return;
+    }
     if (nodes.length === 0) return;
 
     for (const node of nodes) {
