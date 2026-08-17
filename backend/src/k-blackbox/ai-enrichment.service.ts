@@ -102,8 +102,9 @@ export class AiEnrichmentService {
       },
     );
 
-    if (!response.ok) {
-      throw new Error(`AI provider responded ${response.status}`);
+if (!response.ok) {
+      const errorBody = await response.text().catch(() => '<no body>');
+      throw new Error(`AI provider responded ${response.status}: ${errorBody}`);
     }
 
     const data = (await response.json()) as {
@@ -132,8 +133,9 @@ export class AiEnrichmentService {
       }),
     });
 
-    if (!response.ok) {
-      throw new Error(`Embedding API responded ${response.status}`);
+if (!response.ok) {
+      const errorBody = await response.text().catch(() => '<no body>');
+      throw new Error(`Embedding API responded ${response.status}: ${errorBody}`);
     }
 
     const data = (await response.json()) as { embedding?: { values?: number[] } };
