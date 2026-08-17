@@ -126,7 +126,10 @@ export class AiEnrichmentService {
     const response = await fetch(`${baseUrl}/v1beta/models/${model}:embedContent?key=${apiKey}`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ content: { parts: [{ text }] } }),
+      body: JSON.stringify({
+        content: { parts: [{ text }] },
+        outputDimensionality: EMBEDDING_DIMENSION,
+      }),
     });
 
     if (!response.ok) {
