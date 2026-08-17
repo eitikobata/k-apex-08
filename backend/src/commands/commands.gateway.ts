@@ -63,7 +63,7 @@ export class CommandsGateway implements OnGatewayConnection, OnGatewayInit {
     }
 
     try {
-      const payload = await this.jwt.verifyAsync<{ sub: string; type?: string }>(token);
+      const payload = await this.jwt.verifyAsync<{ sub: string; role?: string; type?: string }>(token);
       if (payload.type === 'mfa_pending') throw new Error('MFA not completed');
       client.data.operatorId = payload.sub;
       client.data.role = payload.role;
