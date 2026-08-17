@@ -376,7 +376,7 @@ model CaseFile {
   incident     Incident @relation(fields: [incidentId], references: [id], onDelete: Cascade)
   aiSummary    String? // narrative summary, generated async, optional
   aiSummaryFailed Boolean @default(false)
-  embedding    Unsupported("vector(1536)")?
+  embedding    Unsupported("vector(768)")?
   createdAt    DateTime @default(now())
 
   @@map("case_files")

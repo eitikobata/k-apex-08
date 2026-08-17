@@ -1,0 +1,1 @@
+ALTER TABLE "case_files" ALTER COLUMN "embedding" TYPE vector(768);

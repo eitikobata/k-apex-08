@@ -1,17 +1,18 @@
-import { Body, Controller, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post, Req, UseGuards } from '@nestjs/common';
 import type { Request } from 'express';
 import { KIdService } from './k-id.service';
 import { WebauthnService } from './webauthn.service';
+import { PermissionsService } from './permissions.service';
 import { LoginDto } from './dto/login.dto';
 import { VerifyMfaDto } from './dto/verify-mfa.dto';
 import { RefreshDto } from './dto/refresh.dto';
 import { RegisterOperatorDto } from './dto/register-operator.dto';
 import { VerifyTotpSetupDto } from './dto/verify-totp-setup.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { RolesGuard } from './guards/roles.guard';
 import { Roles } from './decorators/roles.decorator';
 import { CurrentOperator, AuthenticatedOperator } from './decorators/current-operator.decorator';
-import { ChangePasswordDto } from './dto/change-password.dto';
 
 function requestContext(req: Request) {
   return {
@@ -25,6 +26,7 @@ export class KIdController {
   constructor(
     private readonly kId: KIdService,
     private readonly webauthn: WebauthnService,
+    private readonly permissions: PermissionsService,
   ) {}
 
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -85,5 +87,41 @@ export class KIdController {
     @Body('deviceLabel') deviceLabel?: string,
   ) {
     return this.webauthn.verifyRegistration(operator.id, response, deviceLabel);
+  }
+
+  // --- Granular permission management (ADMIN only) -----------------------
+  // These sit alongside role-based access: role decides the broad strokes
+  // (who can even try), a granted scope decides the fine ones (who can
+  // approve SHATTER specifically). See src/k-id/permission-scopes.ts.
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  @Get('operators/:id/permissions')
+  async listPermissions(@Param('id') operatorId: string) {
+    return { scopes: await this.permissions.list(operatorId) };
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  @Post('operators/:id/permissions')
+  async grantPermission(
+    @Param('id') operatorId: string,
+    @Body('scope') scope: string,
+    @CurrentOperator() admin: AuthenticatedOperator,
+  ) {
+    await this.permissions.grant(operatorId, scope, admin.id);
+    return { status: 'ok' };
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  @Delete('operators/:id/permissions/:scope')
+  async revokePermission(
+    @Param('id') operatorId: string,
+    @Param('scope') scope: string,
+    @CurrentOperator() admin: AuthenticatedOperator,
+  ) {
+    await this.permissions.revoke(operatorId, scope, admin.id);
+    return { status: 'ok' };
   }
 }

@@ -1,9 +1,10 @@
 import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
 import { AutonomousModeService } from './autonomous-mode.service';
 import { JwtAuthGuard } from '../k-id/guards/jwt-auth.guard';
+import { PermissionsGuard } from '../k-id/guards/permissions.guard';
+import { RequirePermissions } from '../k-id/decorators/permissions.decorator';
+import { PERMISSION_SCOPES } from '../k-id/permission-scopes';
 import { CurrentOperator, AuthenticatedOperator } from '../k-id/decorators/current-operator.decorator';
-import { RolesGuard } from '../k-id/guards/roles.guard';
-import { Roles } from '../k-id/decorators/roles.decorator';
 
 @Controller('k-directive')
 @UseGuards(JwtAuthGuard)
@@ -15,9 +16,13 @@ export class KDirectiveController {
     return this.autonomousMode.getState();
   }
 
-  /** The manual "GO AUTONOMOUS" / "STAND DOWN" button from the console UI. */
-  @UseGuards(RolesGuard)
-  @Roles('ADMIN', 'SENIOR_OPERATOR', 'OPERATOR')
+  /**
+   * The manual "GO AUTONOMOUS" / "STAND DOWN" button from the console UI.
+   * Granular scope, not just role: ADMIN always passes, SENIOR_OPERATOR/
+   * OPERATOR need an explicit grant (see PERMISSION_SCOPES.TOGGLE_AUTONOMOUS).
+   */
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions(PERMISSION_SCOPES.TOGGLE_AUTONOMOUS)
   @Post('autonomous-mode/toggle')
   async toggle(@Body('active') active: boolean, @CurrentOperator() operator: AuthenticatedOperator) {
     await this.autonomousMode.manualToggle(active, operator.id);

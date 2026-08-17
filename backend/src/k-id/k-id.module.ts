@@ -7,6 +7,7 @@ import { TokenService } from './token.service';
 import { TotpService } from './totp.service';
 import { RateLimitService } from './rate-limit.service';
 import { WebauthnService } from './webauthn.service';
+import { PermissionsService } from './permissions.service';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { RolesGuard } from './guards/roles.guard';
 import { PermissionsGuard } from './guards/permissions.guard';
@@ -29,10 +30,19 @@ import { PermissionsGuard } from './guards/permissions.guard';
     TotpService,
     RateLimitService,
     WebauthnService,
+    PermissionsService,
     JwtAuthGuard,
     RolesGuard,
     PermissionsGuard,
   ],
-  exports: [KIdService, TokenService, JwtAuthGuard, RolesGuard, PermissionsGuard, JwtModule],
+  exports: [
+    KIdService,
+    TokenService,
+    PermissionsService,
+    JwtAuthGuard,
+    RolesGuard,
+    PermissionsGuard,
+    JwtModule,
+  ],
 })
 export class KIdModule {}
