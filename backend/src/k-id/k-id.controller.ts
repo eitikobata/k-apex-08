@@ -11,6 +11,7 @@ import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { RolesGuard } from './guards/roles.guard';
 import { Roles } from './decorators/roles.decorator';
 import { CurrentOperator, AuthenticatedOperator } from './decorators/current-operator.decorator';
+import { ChangePasswordDto } from './dto/change-password.dto';
 
 function requestContext(req: Request) {
   return {
@@ -57,6 +58,16 @@ export class KIdController {
   @Post('logout')
   async logout(@CurrentOperator() operator: AuthenticatedOperator) {
     await this.kId.logout(operator.id);
+    return { status: 'ok' };
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('password')
+  async changePassword(
+    @CurrentOperator() operator: AuthenticatedOperator,
+    @Body() dto: ChangePasswordDto,
+  ) {
+    await this.kId.changePassword(operator.id, dto.currentPassword, dto.newPassword);
     return { status: 'ok' };
   }
 

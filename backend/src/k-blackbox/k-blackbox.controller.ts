@@ -1,12 +1,16 @@
 import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
 import { KBlackboxService } from './k-blackbox.service';
 import { JwtAuthGuard } from '../k-id/guards/jwt-auth.guard';
+import { RolesGuard } from '../k-id/guards/roles.guard';
+import { Roles } from '../k-id/decorators/roles.decorator';
 
 @Controller('k-blackbox')
 @UseGuards(JwtAuthGuard)
 export class KBlackboxController {
   constructor(private readonly blackbox: KBlackboxService) {}
 
+  @UseGuards(RolesGuard)
+  @Roles('ADMIN', 'SENIOR_OPERATOR', 'OPERATOR')
   @Post('cases/:incidentId/summarize')
   async summarize(@Param('incidentId') incidentId: string) {
     return this.blackbox.requestAiSummary(incidentId);

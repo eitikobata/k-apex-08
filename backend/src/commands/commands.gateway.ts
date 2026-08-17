@@ -18,7 +18,7 @@ import { parseTerminalCommand, NormalizedCommand } from './terminal-parser.util'
 const GATEWAY_EVENTS_CHANNEL = 'kapex08:gateway:events';
 
 interface AuthenticatedSocket extends Socket {
-  data: { operatorId?: string };
+  data: { operatorId?: string; role?: string };
 }
 
 interface IncomingCommandPayload {
@@ -66,6 +66,7 @@ export class CommandsGateway implements OnGatewayConnection, OnGatewayInit {
       const payload = await this.jwt.verifyAsync<{ sub: string; type?: string }>(token);
       if (payload.type === 'mfa_pending') throw new Error('MFA not completed');
       client.data.operatorId = payload.sub;
+      client.data.role = payload.role;
       this.logger.log(`Operator ${payload.sub} connected to K-APEX-08 console`);
     } catch {
       client.emit('auth_error', { message: 'Invalid or expired access token' });
@@ -100,7 +101,7 @@ export class CommandsGateway implements OnGatewayConnection, OnGatewayInit {
     }
 
     try {
-      const result = await this.commandService.execute(normalized, operatorId);
+      const result = await this.commandService.execute(normalized, operatorId, client.data.role);
       client.emit('command_result', { command: normalized, result });
     } catch (err) {
       client.emit('command_error', { message: (err as Error).message, command: normalized });

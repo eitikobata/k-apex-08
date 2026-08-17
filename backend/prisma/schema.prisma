@@ -39,6 +39,7 @@ model Operator {
   // MFA
   totpSecret      String? // encrypted at rest in a real deploy; stored plain here for hobby scope, see README
   totpEnabled     Boolean @default(false)
+  mfaExempt       Boolean @default(false)
   webauthnDevices WebauthnCredential[]
 
   refreshTokens RefreshToken[]

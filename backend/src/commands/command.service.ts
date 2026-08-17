@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable } from '@nestjs/common';
 import { KDirectiveService } from '../k-directive/k-directive.service';
 import { AutonomousModeService } from '../k-directive/autonomous-mode.service';
 import { RogueAiService } from '../rogue-ai/rogue-ai.service';
@@ -18,7 +18,16 @@ export class CommandService {
     private readonly rogueAi: RogueAiService,
   ) {}
 
-  async execute(command: NormalizedCommand, operatorId: string): Promise<Record<string, unknown>> {
+  async execute(
+    command: NormalizedCommand,
+    operatorId: string,
+    operatorRole?: string,
+  ): Promise<Record<string, unknown>> {
+    // OBSERVER = "só olhar, não mexe" — sem exceção, em nenhum comando.
+    if (operatorRole === 'OBSERVER') {
+      throw new ForbiddenException('Observers cannot issue commands — read-only access');
+    }
+
     switch (command.type) {
       case 'CONFIRM_KURO_ICE_ACTION':
         await this.kDirective.confirmByOperator(command.incidentId, operatorId);

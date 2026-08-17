@@ -16,7 +16,8 @@ export interface RequestContext {
 
 export type LoginStep1Result =
   | { status: 'MFA_REQUIRED'; mfaPendingToken: string }
-  | { status: 'MFA_SETUP_REQUIRED'; totpSetupToken: string; totpKeyUri: string };
+  | { status: 'MFA_SETUP_REQUIRED'; totpSetupToken: string; totpKeyUri: string }
+  | ({ status: 'MFA_NOT_REQUIRED' } & IssuedTokenPair);
 
 const ARGON2ID_OPTS: argon2.Options = {
   type: argon2.argon2id,
@@ -52,15 +53,12 @@ export class KIdService {
     return { operatorId: operator.id, totpKeyUri: this.totp.keyUri(dto.email, totpSecret) };
   }
 
-  /** Step 1: credentials + rate limit. Returns an MFA challenge, never a full session. */
+  /** Step 1: credentials + rate limit. Returns an MFA challenge, never a full session — unless exempt. */
   async loginStep1(callsign: string, password: string, ctx: RequestContext): Promise<LoginStep1Result> {
     const operator = await this.prisma.operator.findUnique({ where: { callsign } });
 
     // Lockout check happens BEFORE password verification, and applies to
     // every attempt — not just ones where the password turns out correct.
-    // Checking this only after a successful password check would mean a
-    // brute-force attacker (who never gets the password right) never trips
-    // the lockout at all, defeating the entire point of it.
     if (operator) {
       const gate = await this.rateLimit.checkAndConsume(operator.id);
       if (!gate.allowed) {
@@ -99,6 +97,22 @@ export class KIdService {
       actorId: operator.id,
       metadata: { ip: ctx.ip, userAgent: ctx.userAgent },
     });
+
+    // Defense in depth: the exemption flag alone is not enough — it only
+    // takes effect for OBSERVER accounts, which cannot issue any command
+    // (see CommandService). A stray/misconfigured flag on a higher-privilege
+    // account is silently ignored, not honored.
+    if (operator.mfaExempt && operator.role === 'OBSERVER') {
+      const fingerprint = fingerprintOf(ctx.ip, ctx.userAgent);
+      const pair = await this.tokens.issuePair(operator.id, operator.role, fingerprint);
+      await this.blacktape.record({
+        category: 'AUTH',
+        action: 'MFA_EXEMPT_LOGIN',
+        actorType: 'OPERATOR',
+        actorId: operator.id,
+      });
+      return { status: 'MFA_NOT_REQUIRED', ...pair };
+    }
 
     if (!operator.totpEnabled) {
       // First login: no session yet, but we still need a token so the
@@ -189,6 +203,24 @@ export class KIdService {
       throw new UnauthorizedException('Invalid TOTP code — enrollment not confirmed');
     }
     await this.prisma.operator.update({ where: { id: operatorId }, data: { totpEnabled: true } });
+  }
+
+  async changePassword(operatorId: string, currentPassword: string, newPassword: string): Promise<void> {
+    const operator = await this.prisma.operator.findUniqueOrThrow({ where: { id: operatorId } });
+    const valid = await argon2.verify(operator.passwordHash, currentPassword).catch(() => false);
+    if (!valid) {
+      throw new UnauthorizedException('Current password is incorrect');
+    }
+
+    const newHash = await argon2.hash(newPassword, ARGON2ID_OPTS);
+    await this.prisma.operator.update({ where: { id: operatorId }, data: { passwordHash: newHash } });
+    await this.tokens.revokeAllForOperator(operatorId, 'MANUAL_LOGOUT');
+    await this.blacktape.record({
+      category: 'AUTH',
+      action: 'PASSWORD_CHANGED',
+      actorType: 'OPERATOR',
+      actorId: operatorId,
+    });
   }
 
   async refreshSession(rawRefreshToken: string, ctx: RequestContext): Promise<IssuedTokenPair> {
