@@ -83,6 +83,31 @@ export const kIdApi = {
       headers: authHeaders(accessToken),
       body: JSON.stringify(dto),
     }),
+
+  changePassword: (accessToken: string, currentPassword: string, newPassword: string) =>
+    request<{ status: string }>('/k-id/password', {
+      method: 'POST',
+      headers: authHeaders(accessToken),
+      body: JSON.stringify({ currentPassword, newPassword }),
+    }),
+
+  // Both endpoints are real (see KIdController) — they just weren't wired
+  // into the frontend yet. Response types come from @simplewebauthn/types
+  // on the backend; kept loose here (unknown) since the frontend only ever
+  // passes them straight through to @simplewebauthn/browser, never inspects
+  // the shape itself.
+  webauthnRegistrationOptions: (accessToken: string) =>
+    request<Record<string, unknown>>('/k-id/webauthn/registration-options', {
+      method: 'POST',
+      headers: authHeaders(accessToken),
+    }),
+
+  webauthnRegistrationVerify: (accessToken: string, response: unknown, deviceLabel?: string) =>
+    request<{ verified: boolean }>('/k-id/webauthn/registration-verify', {
+      method: 'POST',
+      headers: authHeaders(accessToken),
+      body: JSON.stringify({ response, deviceLabel }),
+    }),
 };
 
 // --- K-ID / Admin operator management ------------------------------------
@@ -160,6 +185,14 @@ export const kDirectiveApi = {
 
 // --- K-BLACKBOX -----------------------------------------------------------
 
+export interface CaseFileSummaryDto {
+  id: string;
+  incidentId: string;
+  aiSummary: string | null;
+  aiSummaryFailed: boolean;
+  createdAt: string;
+}
+
 export const kBlackboxApi = {
   summarize: (accessToken: string, incidentId: string) =>
     request<{ summary: string | null; skipped?: string }>(
@@ -171,4 +204,83 @@ export const kBlackboxApi = {
     request<unknown[]>(`/k-blackbox/cases/${incidentId}/replay`, {
       headers: authHeaders(accessToken),
     }),
+
+  // NOTE (honesty flag): GET /k-blackbox/cases doesn't exist yet — only
+  // summarize and replay are real today (see KBlackboxController). This is
+  // written against the natural extension of that controller so BlackboxPanel
+  // just starts working the moment it lands, same pattern as kIdAdminApi above.
+  listCases: (accessToken: string) =>
+    request<CaseFileSummaryDto[]>('/k-blackbox/cases', {
+      headers: authHeaders(accessToken),
+    }),
+
+  // The real search endpoint (POST /k-blackbox/cases/search) exists but takes
+  // a precomputed embedding vector, not text — there's no server-side "embed
+  // this query" step yet. A text search box has nothing real to call until
+  // that lands, so BlackboxPanel disables the search input rather than fake it.
+};
+
+// --- K-STREAM / incidents --------------------------------------------------
+// NOTE (honesty flag): no REST list endpoint exists yet. IncidentsPanel works
+// today purely from live INCIDENT_AWAITING_OPERATOR socket events accumulated
+// client-side (session-scoped, resets on reload). This function is written
+// for when GET /k-stream/incidents lands, to backfill history on page load.
+export interface IncidentSummaryDto {
+  id: string;
+  tier: 'LATCH' | 'SPLICE' | 'SHATTER';
+  status: string;
+  kind: string;
+  summary: string | null;
+  createdAt: string;
+  resolvedAt: string | null;
+}
+
+export const kStreamApi = {
+  listIncidents: (accessToken: string) =>
+    request<IncidentSummaryDto[]>('/k-stream/incidents', {
+      headers: authHeaders(accessToken),
+    }),
+};
+
+// --- K-SILENCE --------------------------------------------------------------
+// NOTE (honesty flag): no REST endpoint exists yet. The 24 nodes and their
+// SilenceState already exist in the Prisma schema (NetworkNode, SilenceState)
+// but nothing exposes them over HTTP. NodeGrid.tsx calls this and falls back
+// to an "awaiting backend" tile state on a 404 instead of faking data.
+export interface NodeStatusDto {
+  codeName: string; // "NODE-01".."NODE-24"
+  sector: number;
+  status: 'ALIVE' | 'RETRYING' | 'CONFIRMED_SILENT' | 'RESOLVED';
+  lastHeartbeatAt: string | null;
+}
+
+export const kSilenceApi = {
+  listNodes: (accessToken: string) =>
+    request<NodeStatusDto[]>('/k-silence/nodes', {
+      headers: authHeaders(accessToken),
+    }),
+};
+
+// --- K-BLACKTAPE (audit log) -------------------------------------------------
+// NOTE (honesty flag): no REST endpoint exists yet. BlacktapeEntry rows are
+// already being written by BlacktapeService on the backend (auth events,
+// incident resolutions, Rogue AI transitions, etc.) — nothing reads them back
+// over HTTP yet. AuditLogPanel.tsx is built against this contract.
+export interface BlacktapeEntryDto {
+  id: string;
+  category: string;
+  action: string;
+  actorType: string;
+  actorId: string | null;
+  targetType: string | null;
+  targetId: string | null;
+  createdAt: string;
+}
+
+export const kBlacktapeApi = {
+  listEntries: (accessToken: string, category?: string) =>
+    request<BlacktapeEntryDto[]>(
+      `/k-blacktape/entries${category ? `?category=${encodeURIComponent(category)}` : ''}`,
+      { headers: authHeaders(accessToken) },
+    ),
 };

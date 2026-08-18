@@ -10,6 +10,14 @@ import { kDirectiveApi, SystemStateDto } from '@/lib/api-client';
 import { Panel } from '@/components/Panel';
 import { Blackwall, ThreatLevel } from '@/components/Blackwall';
 import { AutonomousBanner } from '@/components/AutonomousBanner';
+import { AccountMenu } from '@/components/AccountMenu';
+import { NotesPanel } from '@/components/NotesPanel';
+import { IncidentsPanel, IncidentRecord } from '@/components/IncidentsPanel';
+import { NodeGrid } from '@/components/NodeGrid';
+import { RogueAiPanel, RogueAiActive } from '@/components/RogueAiPanel';
+import { BlackboxPanel } from '@/components/BlackboxPanel';
+import { ReplayPanel } from '@/components/ReplayPanel';
+import { AuditLogPanel } from '@/components/AuditLogPanel';
 
 // xterm.js references `self` at module-eval time, which doesn't exist
 // during Next's server-side render — must be client-only.
@@ -23,6 +31,8 @@ interface FeedLine {
   text: string;
   tone: 'signal' | 'warn' | 'danger' | 'ash';
 }
+
+type ConsoleView = 'OVERVIEW' | 'INCIDENTS' | 'NODES' | 'ROGUE_AI' | 'BLACKBOX' | 'AUDIT';
 
 let feedIdCounter = 0;
 
@@ -43,6 +53,17 @@ export default function ConsolePage() {
   const socketRef = useRef<Socket | null>(null);
   const feedContainerRef = useRef<HTMLDivElement>(null);
   const threatDecayRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const [view, setView] = useState<ConsoleView>('OVERVIEW');
+  const [notesOpen, setNotesOpen] = useState(false);
+  const [replayIncidentId, setReplayIncidentId] = useState<string | null>(null);
+
+  // Incident records and Rogue AI state are both derived, client-side, from
+  // the same socket events the signal feed already listens to (see the
+  // socket effect below). Session-scoped by construction — see the honesty
+  // flags in IncidentsPanel/RogueAiPanel for what would make this durable.
+  const [incidents, setIncidents] = useState<IncidentRecord[]>([]);
+  const [rogueAiActive, setRogueAiActive] = useState<RogueAiActive | null>(null);
 
   useEffect(() => {
     hydrate();
@@ -83,6 +104,29 @@ export default function ConsolePage() {
     threatDecayRef.current = setTimeout(() => setThreatLevel('CALM'), decayMs);
   }
 
+  function upsertIncident(id: string, patch: Partial<IncidentRecord>, seed?: Partial<IncidentRecord>) {
+    const nowIso = new Date().toISOString();
+    setIncidents((prev) => {
+      const existing = prev.find((i) => i.id === id);
+      if (existing) {
+        return prev.map((i) => (i.id === id ? { ...i, ...patch, updatedAt: nowIso } : i));
+      }
+      return [
+        ...prev,
+        {
+          id,
+          tier: 'LATCH',
+          status: 'AWAITING_OPERATOR',
+          rogueAi: false,
+          createdAt: nowIso,
+          updatedAt: nowIso,
+          ...seed,
+          ...patch,
+        },
+      ];
+    });
+  }
+
   // Establish the WebSocket link once we have a session.
   useEffect(() => {
     if (!session) return;
@@ -106,20 +150,65 @@ export default function ConsolePage() {
     });
     s.on(
       'INCIDENT_AWAITING_OPERATOR',
-      (payload: { incidentId: string; tier: string; rogueAi?: boolean }) => {
+      (payload: { incidentId: string; tier: string; rogueAi?: boolean; rogueAiIncidentId?: string }) => {
         pushFeed(`Incident awaiting operator — tier ${payload.tier} — ${payload.incidentId}`, 'warn');
         bumpThreat(payload.rogueAi ? 'ROGUE_AI' : 'ACTIVE', payload.rogueAi ? 15_000 : 8_000);
+
+        upsertIncident(
+          payload.incidentId,
+          { status: payload.rogueAi ? 'ROGUE_AI_ACTIVE' : 'AWAITING_OPERATOR' },
+          { tier: payload.tier as IncidentRecord['tier'], rogueAi: !!payload.rogueAi },
+        );
+
+        if (payload.rogueAi && payload.rogueAiIncidentId) {
+          setRogueAiActive({
+            rogueAiIncidentId: payload.rogueAiIncidentId,
+            state: 'DETECTED',
+            deadlineAt: Date.now() + 15_000,
+          });
+        }
       },
     );
     s.on('AUTONOMOUS_MODE_CHANGED', (payload: { active: boolean; origin: string }) => {
       pushFeed(`Autonomous mode ${payload.active ? 'ACTIVATED' : 'DEACTIVATED'} (${payload.origin})`, 'danger');
       void refreshSystemState();
     });
-    s.on('ROGUE_AI_TRANSITION', (payload: { outcome: string; nextState: string }) => {
+    s.on('ROGUE_AI_TRANSITION', (payload: { rogueAiIncidentId: string; outcome: string; nextState: string }) => {
       pushFeed(`Rogue AI transition: ${payload.outcome} -> ${payload.nextState}`, 'danger');
-      if (payload.outcome === 'NEUTRALIZED') {
+
+      const terminal = ['NEUTRALIZED', 'ESCALATED', 'SPREAD'].includes(payload.nextState);
+      setIncidents((prev) =>
+        prev.map((i) => {
+          // We don't get incidentId on this event, only rogueAiIncidentId —
+          // match against whatever incident currently owns the active
+          // Rogue AI thread rather than trying to correlate IDs that
+          // aren't in the payload.
+          if (!i.rogueAi || i.status !== 'ROGUE_AI_ACTIVE') return i;
+          if (payload.nextState === 'NEUTRALIZED') return { ...i, status: 'RESOLVED', updatedAt: new Date().toISOString() };
+          if (payload.nextState === 'ESCALATED' || payload.nextState === 'SPREAD')
+            return { ...i, status: 'ESCALATED', updatedAt: new Date().toISOString() };
+          return { ...i, updatedAt: new Date().toISOString() };
+        }),
+      );
+
+      setRogueAiActive((prev) =>
+        prev
+          ? {
+              ...prev,
+              state: payload.nextState,
+              deadlineAt: terminal ? prev.deadlineAt : Date.now() + 15_000,
+            }
+          : prev,
+      );
+
+      if (payload.outcome === 'NEUTRALIZED' || terminal) {
         if (threatDecayRef.current) clearTimeout(threatDecayRef.current);
         setThreatLevel('CALM');
+        if (payload.nextState !== 'NEUTRALIZED') {
+          // Escalated/spread — clear the panel after a beat so the operator
+          // still sees the final state land before it disappears.
+          setTimeout(() => setRogueAiActive(null), 4_000);
+        }
       } else {
         bumpThreat('ROGUE_AI', 15_000);
       }
@@ -128,6 +217,14 @@ export default function ConsolePage() {
       pushFeed('Rogue AI resolved autonomously (preemptive node lockdown).', 'danger');
       if (threatDecayRef.current) clearTimeout(threatDecayRef.current);
       setThreatLevel('CALM');
+      setRogueAiActive(null);
+      setIncidents((prev) =>
+        prev.map((i) =>
+          i.rogueAi && i.status === 'ROGUE_AI_ACTIVE'
+            ? { ...i, status: 'RESOLVED', updatedAt: new Date().toISOString() }
+            : i,
+        ),
+      );
     });
 
     s.connect();
@@ -185,16 +282,33 @@ export default function ConsolePage() {
 
   const isAutonomous = !!systemState?.autonomousModeActive;
 
+  function openCase(incidentId: string) {
+    setReplayIncidentId(incidentId);
+    setView('BLACKBOX');
+  }
+
   return (
     <>
       <AutonomousBanner active={isAutonomous} />
 
+      {notesOpen && (
+        <div className="fixed inset-0 z-[550] bg-void/80 flex items-center justify-center" onClick={() => setNotesOpen(false)}>
+          <div className="panel-border bg-panel w-full max-w-2xl h-[70vh]" onClick={(e) => e.stopPropagation()}>
+            <div className="border-b-2 border-danger px-3 py-2 flex items-center justify-between">
+              <span className="font-display text-xs tracking-[0.2em] text-danger uppercase">[ Notes ]</span>
+              <button onClick={() => setNotesOpen(false)} className="text-ash hover:text-ash-bright text-xs">
+                close ✕
+              </button>
+            </div>
+            <NotesPanel />
+          </div>
+        </div>
+      )}
+
       <main
-        className={`h-screen w-screen p-3 grid grid-cols-3 grid-rows-[auto_minmax(0,1fr)_minmax(0,1fr)] gap-3 ${
-          isAutonomous ? 'mode-autonomous' : 'mode-operator'
-        }`}
+        className={`h-screen w-screen p-3 flex flex-col gap-3 ${isAutonomous ? 'mode-autonomous' : 'mode-operator'}`}
       >
-        <header className="col-span-3 flex items-center justify-between">
+        <header className="flex items-center justify-between shrink-0">
           <h1 className="font-display text-sm tracking-[0.3em] text-ash-bright uppercase">
             K-APEX-08 <span className="text-ash">{'//'} Kobata Matrix Corporation</span>
           </h1>
@@ -205,6 +319,12 @@ export default function ConsolePage() {
             {isAutonomous && (
               <span className="text-warn font-display tracking-widest">AUTONOMOUS MODE ACTIVE</span>
             )}
+            <button
+              onClick={() => setNotesOpen(true)}
+              className="border border-ash text-ash hover:border-ash-bright hover:text-ash-bright font-display tracking-widest uppercase text-[10px] px-2 py-1 transition-colors"
+            >
+              Notes
+            </button>
             {role === 'ADMIN' && (
               <a
                 href="/admin"
@@ -213,50 +333,124 @@ export default function ConsolePage() {
                 Admin panel
               </a>
             )}
+            <AccountMenu accessToken={session.accessToken} />
           </div>
         </header>
 
-        <Panel title="System state">
-          <div className="p-3 flex flex-col gap-3 text-xs">
-            <Row label="Autonomous mode" value={isAutonomous ? 'ACTIVE' : 'STANDBY'} />
-            <Row label="Origin" value={systemState?.activatedOrigin ?? '—'} />
+        <nav className="flex gap-2 shrink-0 text-[10px]">
+          {(
+            [
+              ['OVERVIEW', 'Overview'],
+              ['INCIDENTS', 'Incidents'],
+              ['NODES', 'K-SILENCE'],
+              ['ROGUE_AI', 'Rogue AI'],
+              ['BLACKBOX', 'K-BLACKBOX'],
+              ['AUDIT', 'Audit log'],
+            ] as [ConsoleView, string][]
+          ).map(([key, label]) => (
             <button
-              onClick={sendHeartbeat}
-              className="mt-2 border border-signal text-signal font-display tracking-widest uppercase text-[10px] py-1.5 hover:bg-signal hover:text-void transition-colors"
+              key={key}
+              onClick={() => setView(key)}
+              className={`font-display tracking-widest uppercase px-3 py-1.5 border transition-colors ${
+                view === key
+                  ? 'border-danger text-danger'
+                  : 'border-ash text-ash hover:border-ash-bright hover:text-ash-bright'
+              }`}
             >
-              Send heartbeat
+              {label}
+              {key === 'ROGUE_AI' && rogueAiActive && <span className="ml-1 text-danger">●</span>}
             </button>
-            <button
-              onClick={toggleAutonomous}
-              disabled={autonomousBusy}
-              className="border border-warn text-warn font-display tracking-widest uppercase text-[10px] py-1.5 hover:bg-warn hover:text-void transition-colors disabled:opacity-50"
-            >
-              {autonomousBusy ? 'Working…' : isAutonomous ? 'Stand down' : 'Go autonomous'}
-            </button>
+          ))}
+        </nav>
+
+        {view === 'OVERVIEW' && (
+          <div className="flex-1 min-h-0 grid grid-cols-3 grid-rows-[minmax(0,1fr)_minmax(0,1fr)] gap-3">
+            <Panel title="System state">
+              <div className="p-3 flex flex-col gap-3 text-xs">
+                <Row label="Autonomous mode" value={isAutonomous ? 'ACTIVE' : 'STANDBY'} />
+                <Row label="Origin" value={systemState?.activatedOrigin ?? '—'} />
+                <button
+                  onClick={sendHeartbeat}
+                  className="mt-2 border border-signal text-signal font-display tracking-widest uppercase text-[10px] py-1.5 hover:bg-signal hover:text-void transition-colors"
+                >
+                  Send heartbeat
+                </button>
+                <button
+                  onClick={toggleAutonomous}
+                  disabled={autonomousBusy}
+                  className="border border-warn text-warn font-display tracking-widest uppercase text-[10px] py-1.5 hover:bg-warn hover:text-void transition-colors disabled:opacity-50"
+                >
+                  {autonomousBusy ? 'Working…' : isAutonomous ? 'Stand down' : 'Go autonomous'}
+                </button>
+              </div>
+            </Panel>
+
+            <Panel title="Perimeter defense">
+              <Blackwall threatLevel={threatLevel} />
+            </Panel>
+
+            <Panel title="Signal feed">
+              <div
+                ref={feedContainerRef}
+                className="p-3 flex flex-col gap-1 text-xs overflow-y-auto h-full font-mono"
+              >
+                {feed.length === 0 && <span className="text-ash">Awaiting signal…</span>}
+                {feed.map((line) => (
+                  <span key={line.id} className={toneClass(line.tone)}>
+                    {line.text}
+                  </span>
+                ))}
+              </div>
+            </Panel>
+
+            <Panel title="Command terminal" className="col-span-3">
+              <ConsoleTerminal socket={socket} />
+            </Panel>
           </div>
-        </Panel>
+        )}
 
-        <Panel title="Perimeter defense">
-          <Blackwall threatLevel={threatLevel} />
-        </Panel>
+        {view === 'INCIDENTS' && (
+          <Panel title="Incidents" className="flex-1 min-h-0">
+            <IncidentsPanel incidents={incidents} onOpenCase={openCase} />
+          </Panel>
+        )}
 
-        <Panel title="Signal feed">
-          <div
-            ref={feedContainerRef}
-            className="p-3 flex flex-col gap-1 text-xs overflow-y-auto h-full font-mono"
-          >
-            {feed.length === 0 && <span className="text-ash">Awaiting signal…</span>}
-            {feed.map((line) => (
-              <span key={line.id} className={toneClass(line.tone)}>
-                {line.text}
-              </span>
-            ))}
+        {view === 'NODES' && (
+          <Panel title="K-SILENCE — node grid" className="flex-1 min-h-0">
+            <NodeGrid accessToken={session.accessToken} />
+          </Panel>
+        )}
+
+        {view === 'ROGUE_AI' && (
+          <Panel title="Rogue AI containment" className="flex-1 min-h-0">
+            <RogueAiPanel active={rogueAiActive} socket={socket} />
+          </Panel>
+        )}
+
+        {view === 'BLACKBOX' && (
+          <div className="flex-1 min-h-0 grid grid-cols-2 gap-3">
+            <Panel title="K-BLACKBOX — case archive">
+              <BlackboxPanel
+                accessToken={session.accessToken}
+                sessionIncidents={incidents}
+                onOpenReplay={setReplayIncidentId}
+              />
+            </Panel>
+            <Panel title={replayIncidentId ? `Replay — ${replayIncidentId.slice(0, 8)}…` : 'Replay'}>
+              {replayIncidentId ? (
+                <ReplayPanel accessToken={session.accessToken} incidentId={replayIncidentId} />
+              ) : (
+                <div className="p-3 text-xs text-ash">Select a case to replay it event by event.</div>
+              )}
+            </Panel>
           </div>
-        </Panel>
+        )}
 
-        <Panel title="Command terminal" className="col-span-3">
-          <ConsoleTerminal socket={socket} />
-        </Panel>
+        {view === 'AUDIT' && (
+          <Panel title="K-BLACKTAPE — audit log" className="flex-1 min-h-0">
+            <AuditLogPanel accessToken={session.accessToken} />
+          </Panel>
+        )}
       </main>
     </>
   );

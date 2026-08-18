@@ -16,7 +16,8 @@
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "socket.io-client": "^4.8.0",
-    "zustand": "^4.5.5"
+    "zustand": "^4.5.5",
+    "@simplewebauthn/browser": "^10.0.0"
   },
   "devDependencies": {
     "@types/node": "^22.7.4",
