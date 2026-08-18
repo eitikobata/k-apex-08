@@ -29,12 +29,16 @@ body {
   inset: 0;
   pointer-events: none;
   z-index: 999;
-  mix-blend-mode: overlay;
+  /* `overlay` barely does anything against a near-black backdrop — the
+     math compresses toward zero regardless of the blend layer's own
+     brightness. `screen` adds light unconditionally, which is what
+     actually makes scanlines visible over a very dark palette. */
+  mix-blend-mode: screen;
   opacity: 0.5;
   background-image: repeating-linear-gradient(
     to bottom,
-    rgba(255, 255, 255, 0.035) 0px,
-    rgba(255, 255, 255, 0.035) 1px,
+    rgba(255, 255, 255, 0.08) 0px,
+    rgba(255, 255, 255, 0.08) 1px,
     transparent 1px,
     transparent 3px
   );
@@ -72,12 +76,22 @@ body {
   mix-blend-mode: screen;
 }
 
-/* Utility: dirty hairline border, textured rather than flat */
+/* Utility: dirty hairline border, textured rather than flat.
+   The border/title color is FIXED — this is the project's one visual
+   identity, not something that varies per screen or per mode. Autonomous
+   mode still reads as distinct because .mode-autonomous desaturates
+   everything via a grayscale filter — it doesn't need its own border
+   color, the same red just goes gray along with everything else.
+   The cut top corners + colored glow (not just a black drop shadow) are
+   deliberate: a plain rounded rectangle reads as generic SaaS dashboard,
+   not a corporate security HUD from a dirty cyberpunk world. */
 .panel-border {
-  border: 1px solid theme('colors.grid');
+  border: 2px solid theme('colors.danger.DEFAULT');
+  clip-path: polygon(0 14px, 14px 0, 100% 0, 100% 100%, 0 100%);
   box-shadow:
     inset 0 0 0 1px rgba(255, 255, 255, 0.02),
-    0 0 24px rgba(0, 0, 0, 0.4);
+    0 0 16px rgba(226, 28, 56, 0.4),
+    0 0 28px rgba(0, 0, 0, 0.65);
 }
 
 ::selection {
@@ -93,4 +107,237 @@ body {
 .terminal-shell .xterm {
   height: 100%;
   padding: 12px;
+}
+
+/* --- Autonomous vs operator-active identity ---------------------------
+   Autonomous mode ("nobody's driving") desaturates the whole console —
+   flat, cold, mechanical — via a grayscale filter on a wrapper (NOT on
+   <body> directly, so it never touches the hazard band/banner, which
+   needs to stay legible as a warning even while everything else goes
+   gray). Operator-active mode is just the normal fixed palette.
+------------------------------------------------------------------------ */
+.mode-autonomous {
+  filter: grayscale(0.85) brightness(0.82);
+  transition: filter 700ms ease;
+}
+.mode-operator {
+  filter: none;
+  transition: filter 700ms ease;
+}
+
+/* --- CRT scanlines (already covered by .crt-layer above) ---------------
+   Removed the heavier edge-blur vignette that used backdrop-filter — it
+   forced a per-frame blur recalculation of the animating Blackwall canvas
+   underneath, which is expensive and made the whole console feel laggy.
+   Plain repeating-gradient scanlines (see .crt-layer near the top of this
+   file) give the same "old monitor" read for a fraction of the cost.
+------------------------------------------------------------------------ */
+
+/* Reusable hazard-tape stripe — used inside the autonomous banner, one
+   scrolling each direction (see AutonomousBanner.tsx). Color matches
+   .autonomous-banner-rule (danger, same family as the underline beneath
+   the title) rather than the amber/warn tone used elsewhere — this pairing
+   reads as one cohesive warning motif instead of two different alerts. */
+.autonomous-stripe {
+  height: 16px;
+  width: min(70vw, 640px);
+  margin: 0 auto;
+  background-image: repeating-linear-gradient(
+    135deg,
+    theme('colors.danger.DEFAULT') 0px,
+    theme('colors.danger.DEFAULT') 14px,
+    transparent 14px,
+    transparent 28px
+  );
+  background-size: 200% 100%;
+  opacity: 0.55;
+}
+.autonomous-stripe-top {
+  margin-bottom: 0.85rem;
+  animation: hazard-scroll 5s linear infinite;
+}
+.autonomous-stripe-bottom {
+  margin-top: 0.85rem;
+  animation: hazard-scroll-reverse 5s linear infinite;
+}
+
+@keyframes hazard-scroll {
+  from {
+    background-position: 0 0;
+  }
+  to {
+    background-position: -180px 0;
+  }
+}
+
+@keyframes hazard-scroll-reverse {
+  from {
+    background-position: -180px 0;
+  }
+  to {
+    background-position: 0 0;
+  }
+}
+
+/* --- Autonomous mode banner --------------------------------------------
+   Large, centered, softly pulsing warning — deliberately NOT a hard flash.
+   Lives outside .mode-autonomous (same reasoning as the hazard band): a
+   warning that goes gray with the rest of the UI stops reading as urgent.
+   pointer-events: none — this is a status announcement, not a blocking
+   modal (that's a separate, later feature).
+------------------------------------------------------------------------ */
+.autonomous-banner {
+  position: fixed;
+  inset: 0;
+  z-index: 550;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.autonomous-banner-inner {
+  text-align: center;
+  animation: autonomous-pulse 3.2s ease-in-out infinite;
+}
+
+.autonomous-banner-eyebrow {
+  display: block;
+  font-family: var(--font-jetbrains), monospace;
+  font-size: 0.7rem;
+  letter-spacing: 0.5em;
+  color: theme('colors.warn.DEFAULT');
+  text-transform: uppercase;
+  margin-bottom: 0.5rem;
+}
+
+.autonomous-banner-title {
+  display: block;
+  font-family: var(--font-rajdhani), sans-serif;
+  font-weight: 700;
+  font-size: clamp(2.5rem, 8vw, 6rem);
+  letter-spacing: 0.12em;
+  color: theme('colors.danger.DEFAULT');
+  text-transform: uppercase;
+  line-height: 1;
+}
+
+.autonomous-banner-rule {
+  height: 3px;
+  width: 60%;
+  margin: 0.75rem auto 0.5rem;
+  background: theme('colors.danger.DEFAULT');
+}
+
+.autonomous-banner-caption {
+  display: block;
+  font-family: var(--font-jetbrains), monospace;
+  font-size: 0.65rem;
+  letter-spacing: 0.15em;
+  color: theme('colors.ash.DEFAULT');
+  text-transform: uppercase;
+}
+
+@keyframes autonomous-pulse {
+  0%,
+  100% {
+    opacity: 0.4;
+  }
+  50% {
+    opacity: 0.95;
+  }
+}
+
+/* --- Scrollbars ---------------------------------------------------------
+   Default OS scrollbars (light gray track) look completely out of place
+   on this palette. Cyan thumb on a near-black track — thin enough to stay
+   out of the way, visible enough to actually find.
+------------------------------------------------------------------------ */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: theme('colors.signal.DEFAULT') theme('colors.void');
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: theme('colors.void');
+}
+::-webkit-scrollbar-thumb {
+  background-color: theme('colors.signal.DEFAULT');
+  border-radius: 0;
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: theme('colors.ash.bright');
+}
+
+/* --- Animated background — 4 data columns behind everything -------------
+   Only visible in the gaps around panels, since panels sit on solid black.
+   Padding lives on the outer .bg-col (static), NOT on .bg-col-inner (the
+   animated one) — the inner element's height must be EXACTLY 2x the list
+   height for translateY(-50%) to land precisely on the seam between the
+   two duplicated copies. Padding inside it throws that math off and
+   produces a visible gap right before the loop restarts.
+------------------------------------------------------------------------ */
+.bg-columns {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  overflow: hidden;
+  background: #000;
+}
+.bg-col {
+  position: relative;
+  overflow: hidden;
+  padding: 20px 14px;
+  font-family: var(--font-jetbrains), monospace;
+  font-size: 11px;
+  line-height: 1.9;
+  color: rgba(139, 147, 161, 0.34);
+  white-space: pre;
+  border-right: 1px solid rgba(255, 255, 255, 0.02);
+}
+.bg-col-inner {
+  position: absolute;
+  top: 0;
+  left: 14px;
+  right: 14px;
+  animation: bg-scroll var(--bg-scroll-duration, 42s) linear infinite;
+}
+@keyframes bg-scroll {
+  from { transform: translateY(0); }
+  to { transform: translateY(-50%); }
+}
+
+/* --- Occasional glitch artifacts -----------------------------------------
+   Two layers, different durations/delays so they never sync up — reads as
+   "signal occasionally corrupts" rather than a metronomic pulse. Each
+   spends ~99% of its cycle fully invisible; the glitch itself lasts a
+   handful of frames.
+--------------------------------------------------------------------------- */
+.glitch-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 996;
+  pointer-events: none;
+  mix-blend-mode: screen;
+  opacity: 0;
+}
+.glitch-layer.g1 { animation: glitch-a 7.3s infinite; }
+.glitch-layer.g2 { animation: glitch-b 11.7s infinite; animation-delay: 2.1s; }
+
+@keyframes glitch-a {
+  0%, 96.4%, 100% { opacity: 0; transform: translateX(0); clip-path: inset(0 0 100% 0); }
+  96.5% { opacity: 0.55; transform: translateX(-8px); clip-path: inset(22% 0 61% 0); background: linear-gradient(90deg, rgba(226,28,56,0.5), rgba(63,208,232,0.35)); }
+  96.7% { opacity: 0.35; transform: translateX(5px); clip-path: inset(48% 0 30% 0); }
+  96.9% { opacity: 0; }
+}
+@keyframes glitch-b {
+  0%, 97.6%, 100% { opacity: 0; transform: translateX(0); clip-path: inset(100% 0 0 0); }
+  97.7% { opacity: 0.4; transform: translateX(6px); clip-path: inset(65% 0 10% 0); background: linear-gradient(90deg, rgba(63,208,232,0.4), rgba(226,28,56,0.5)); }
+  97.85% { opacity: 0; }
 }

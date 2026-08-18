@@ -1,5 +1,9 @@
 import { io, Socket } from 'socket.io-client';
 
+// Strips any trailing slash — a raw '/' at the end plus the '/console'
+// suffix below produced a literal '//console' namespace, which the
+// backend's socket.io rejected as invalid. Defensive regardless of what's
+// actually in the env var.
 const WS_URL = (process.env.NEXT_PUBLIC_WS_URL ?? 'http://localhost:3000').replace(/\/+$/, '');
 
 // Mirrors src/commands/terminal-parser.util.ts on the backend exactly —
@@ -47,7 +51,6 @@ export function createConsoleSocket(accessToken: string): Socket {
   return io(`${WS_URL}/console`, {
     auth: { token: accessToken },
     autoConnect: false,
-    transports: ['polling'],
   });
 }
 

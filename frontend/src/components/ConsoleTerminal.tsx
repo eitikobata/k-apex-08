@@ -7,7 +7,7 @@ import '@xterm/xterm/css/xterm.css';
 import type { Socket } from 'socket.io-client';
 import { sendRawCommand } from '@/lib/socket-client';
 
-const PROMPT = '\r\n\x1b[38;2;63;208;232mK-APEX-08>\x1b[0m ';
+const PROMPT = '\r\n\x1b[38;2;0;0;0m\x1b[48;2;63;208;232m K-APEX-08> \x1b[0m ';
 
 export function ConsoleTerminal({ socket }: { socket: Socket | null }) {
   const containerRef = useRef<HTMLDivElement>(null);

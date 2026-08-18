@@ -73,6 +73,52 @@ export const kIdApi = {
       method: 'POST',
       headers: authHeaders(accessToken),
     }),
+
+  registerOperator: (
+    accessToken: string,
+    dto: { callsign: string; email: string; password: string; role: string },
+  ) =>
+    request<{ operatorId: string; totpKeyUri: string }>('/k-id/operators', {
+      method: 'POST',
+      headers: authHeaders(accessToken),
+      body: JSON.stringify(dto),
+    }),
+};
+
+// --- K-ID / Admin operator management ------------------------------------
+// NOTE (honesty flag): these three endpoints don't exist on the backend
+// yet — listOperators, revokeOperatorSessions, and deleteOperator are all
+// planned but not implemented as of this writing. They'll 404 until the
+// backend catches up. Written now so the admin page just starts working
+// the moment those land, no frontend changes needed.
+
+export interface OperatorSummaryDto {
+  id: string;
+  callsign: string;
+  email: string;
+  role: string;
+  totpEnabled: boolean;
+  mfaExempt: boolean;
+  createdAt: string;
+}
+
+export const kIdAdminApi = {
+  listOperators: (accessToken: string) =>
+    request<OperatorSummaryDto[]>('/k-id/operators', {
+      headers: authHeaders(accessToken),
+    }),
+
+  revokeOperatorSessions: (accessToken: string, operatorId: string) =>
+    request<{ status: string }>(`/k-id/operators/${operatorId}/revoke-sessions`, {
+      method: 'POST',
+      headers: authHeaders(accessToken),
+    }),
+
+  deleteOperator: (accessToken: string, operatorId: string) =>
+    request<{ status: string }>(`/k-id/operators/${operatorId}`, {
+      method: 'DELETE',
+      headers: authHeaders(accessToken),
+    }),
 };
 
 // --- K-DIRECTIVE --------------------------------------------------------

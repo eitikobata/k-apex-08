@@ -8,12 +8,32 @@ export interface OperatorSession {
 
 interface AuthState {
   session: OperatorSession | null;
+  /** Decoded from the access token's payload — UI-only, never trust this for real authorization. */
+  role: string | null;
   setSession: (session: OperatorSession) => void;
   clearSession: () => void;
   hydrate: () => void;
 }
 
 const STORAGE_KEY = 'kapex08.session';
+
+/**
+ * Reads the JWT payload without verifying the signature — that's fine here,
+ * because this value only ever drives UI decisions (show/hide the admin
+ * button). Every actual privileged action is re-checked server-side
+ * (RolesGuard / PermissionsGuard), so a tampered client-side value can't
+ * grant real access, only a misleading button.
+ */
+function decodeJwtRole(token: string): string | null {
+  try {
+    const payloadB64 = token.split('.')[1];
+    const json = atob(payloadB64.replace(/-/g, '+').replace(/_/g, '/'));
+    const payload = JSON.parse(json) as { role?: string };
+    return payload.role ?? null;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * sessionStorage, not localStorage: the session dies with the tab, which is
@@ -23,19 +43,20 @@ const STORAGE_KEY = 'kapex08.session';
  */
 export const useAuthStore = create<AuthState>((set) => ({
   session: null,
+  role: null,
 
   setSession: (session) => {
     if (typeof window !== 'undefined') {
       sessionStorage.setItem(STORAGE_KEY, JSON.stringify(session));
     }
-    set({ session });
+    set({ session, role: decodeJwtRole(session.accessToken) });
   },
 
   clearSession: () => {
     if (typeof window !== 'undefined') {
       sessionStorage.removeItem(STORAGE_KEY);
     }
-    set({ session: null });
+    set({ session: null, role: null });
   },
 
   hydrate: () => {
@@ -43,7 +64,8 @@ export const useAuthStore = create<AuthState>((set) => ({
     const raw = sessionStorage.getItem(STORAGE_KEY);
     if (!raw) return;
     try {
-      set({ session: JSON.parse(raw) as OperatorSession });
+      const session = JSON.parse(raw) as OperatorSession;
+      set({ session, role: decodeJwtRole(session.accessToken) });
     } catch {
       sessionStorage.removeItem(STORAGE_KEY);
     }
