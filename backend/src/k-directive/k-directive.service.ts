@@ -16,6 +16,17 @@ const CONSUMER_GROUP = 'k-directive-processor';
 const CONSUMER_NAME = 'k-directive-worker-1';
 const POLL_INTERVAL_MS = 1000;
 const GATEWAY_EVENTS_CHANNEL = 'kapex08:gateway:events';
+const DEADLINE_SWEEP_INTERVAL_MS = 2000;
+
+// Tier-scaled operator deadline — matches TIER_TIMER_MS in
+// IncidentsPanel.tsx on the frontend (keep both in sync if this changes).
+// Lower severity gets more time, SHATTER gets the least — same escalating-
+// difficulty pattern as everywhere else in this project.
+const OPERATOR_DEADLINE_MS: Record<'LATCH' | 'SPLICE' | 'SHATTER', number> = {
+  LATCH: 90_000,
+  SPLICE: 60_000,
+  SHATTER: 30_000,
+};
 
 @Injectable()
 export class KDirectiveService implements OnModuleInit {
@@ -128,7 +139,10 @@ export class KDirectiveService implements OnModuleInit {
     const decision = decideIncidentHandling(incident.tier, systemState.autonomousModeActive);
 
     if (decision.requiresOperator) {
-      await this.prisma.incident.update({ where: { id: incidentId }, data: { status: 'AWAITING_OPERATOR' } });
+      await this.prisma.incident.update({
+        where: { id: incidentId },
+        data: { status: 'AWAITING_OPERATOR', operatorDeadlineAt: new Date(Date.now() + OPERATOR_DEADLINE_MS[incident.tier as 'LATCH' | 'SPLICE' | 'SHATTER']) },
+      });
       await this.notifyGateway('INCIDENT_AWAITING_OPERATOR', { incidentId, tier: incident.tier });
       return;
     }
@@ -168,11 +182,22 @@ export class KDirectiveService implements OnModuleInit {
       throw new Error(`Incident ${incidentId} is not awaiting operator confirmation (status=${incident.status})`);
     }
 
-    const actionType = incident.tier === 'SPLICE' ? 'BLOCK_TRAFFIC' : 'ISOLATE_NODE';
+    // NOTE (bugfix): this fell through to ISOLATE_NODE for LATCH too — the
+    // ternary only ever checked for SPLICE. Harmless while LATCH always
+    // self-resolved (this code path was unreachable for LATCH), but now
+    // that LATCH genuinely reaches operator confirmation, it needs its own
+    // branch — matches decideIncidentHandling's actionType exactly.
+    const actionType =
+      incident.tier === 'LATCH' ? 'FLAG_ONLY' : incident.tier === 'SPLICE' ? 'BLOCK_TRAFFIC' : 'ISOLATE_NODE';
 
     await this.prisma.incident.update({
       where: { id: incidentId },
-      data: { status: 'AUTO_RESOLVING', resolutionOrigin: 'MANUAL_OPERATOR', resolvedByOperatorId: operatorId },
+      data: {
+        status: 'AUTO_RESOLVING',
+        resolutionOrigin: 'MANUAL_OPERATOR',
+        resolvedByOperatorId: operatorId,
+        operatorDeadlineAt: null,
+      },
     });
 
     await this.blacktape.record({
@@ -195,6 +220,44 @@ export class KDirectiveService implements OnModuleInit {
     await this.prisma.incident.update({ where: { id: incidentId }, data: { status: 'RESOLVED', resolvedAt: new Date() } });
         await this.kBlackbox.archiveResolvedIncident(incidentId);
       }
+
+  /**
+   * Swept periodically — catches LATCH/SPLICE/SHATTER incidents where the
+   * operator never confirmed in time. Same pattern as RogueAiService's
+   * sweepExpiredDeadlines, just for the plain KURO-ICE confirmation flow
+   * instead of the Rogue AI state machine. No auto-remediation on
+   * expiry — this only marks the incident ESCALATED and notifies the
+   * gateway; it deliberately does NOT attempt KURO-ICE's action for the
+   * operator (that's a bigger behavioral decision — autonomous mode
+   * already covers "act without a human", ESCALATED here just means
+   * "a human was supposed to look at this and didn't").
+   */
+  @Interval(DEADLINE_SWEEP_INTERVAL_MS)
+  async sweepExpiredOperatorDeadlines(): Promise<void> {
+    const now = new Date();
+    const expired = await this.prisma.incident.findMany({
+      where: { status: 'AWAITING_OPERATOR', operatorDeadlineAt: { lt: now } },
+    });
+
+    for (const incident of expired) {
+      // eslint-disable-next-line no-await-in-loop
+      await this.prisma.incident.update({
+        where: { id: incident.id },
+        data: { status: 'ESCALATED', operatorDeadlineAt: null },
+      });
+      // eslint-disable-next-line no-await-in-loop
+      await this.blacktape.record({
+        category: 'K_DIRECTIVE',
+        action: 'INCIDENT_DEADLINE_EXPIRED',
+        actorType: 'SYSTEM',
+        targetType: 'Incident',
+        targetId: incident.id,
+        metadata: { tier: incident.tier },
+      });
+      // eslint-disable-next-line no-await-in-loop
+      await this.notifyGateway('INCIDENT_ESCALATED', { incidentId: incident.id, tier: incident.tier });
+    }
+  }
 
   private async notifyGateway(eventType: string, payload: Record<string, unknown>): Promise<void> {
     await this.redis.publish(GATEWAY_EVENTS_CHANNEL, JSON.stringify({ eventType, payload }));

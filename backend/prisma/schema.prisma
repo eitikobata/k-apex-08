@@ -270,6 +270,15 @@ model Incident {
   resolvedByOperator   Operator? @relation("ResolvedByOperator", fields: [resolvedByOperatorId], references: [id])
   resolvedAt       DateTime?
 
+  // Set when the incident enters AWAITING_OPERATOR (see K-DIRECTIVE's
+  // handleIncident) — tier-scaled: LATCH gets the most time, SHATTER the
+  // least, matching the escalating difficulty already established on the
+  // frontend (TIER_TIMER_MS in IncidentsPanel.tsx — keep both in sync if
+  // this changes). Swept by KDirectiveService.sweepExpiredOperatorDeadlines
+  // the same way RogueAiIncident.stepDeadlineAt is swept — past due and
+  // still AWAITING_OPERATOR means ESCALATED, no human needed to notice.
+  operatorDeadlineAt DateTime?
+
   rogueAiIncident  RogueAiIncident?
   silenceState     SilenceState?
   kuroIceActions   KuroIceAction[]
