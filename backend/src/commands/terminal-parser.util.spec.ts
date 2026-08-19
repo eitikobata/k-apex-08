@@ -13,10 +13,14 @@ describe('parseTerminalCommand', () => {
     expect(result.command).toEqual({ type: 'CONFIRM_KURO_ICE_ACTION', incidentId: 'inc-abc' });
   });
 
-  it('rejects CONFIRM with an invalid tier', () => {
-    const result = parseTerminalCommand('CONFIRM LATCH //inc-123');
-    expect(result.ok).toBe(false);
-    expect(result.error).toMatch(/SHATTER or SPLICE/);
+  it('accepts CONFIRM regardless of the word between it and the target — tier is never checked here (CommandService looks the real tier up from the DB)', () => {
+    const bare = parseTerminalCommand('CONFIRM //inc-123');
+    expect(bare.ok).toBe(true);
+    expect(bare.command).toEqual({ type: 'CONFIRM_KURO_ICE_ACTION', incidentId: 'inc-123' });
+
+    const withLatch = parseTerminalCommand('CONFIRM LATCH //inc-123');
+    expect(withLatch.ok).toBe(true);
+    expect(withLatch.command).toEqual({ type: 'CONFIRM_KURO_ICE_ACTION', incidentId: 'inc-123' });
   });
 
   it('rejects CONFIRM without a target', () => {

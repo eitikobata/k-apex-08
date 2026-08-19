@@ -295,9 +295,9 @@ body {
   overflow: hidden;
   padding: 20px 14px;
   font-family: var(--font-jetbrains), monospace;
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.9;
-  color: rgba(139, 147, 161, 0.34);
+  color: rgba(139, 147, 161, 0.55);
   white-space: pre;
   border-right: 1px solid rgba(255, 255, 255, 0.02);
 }
@@ -320,6 +320,14 @@ body {
   letter-spacing: 0.15em;
   line-height: 1.6;
   text-shadow: 0 0 12px rgba(232, 63, 107, 0.6);
+}
+
+/* Indeterminate loading bar for the "AI resolves?" flavor button in
+   IncidentsPanel — no real progress to track (it's a fake timer), so this
+   just sweeps back and forth like an old browser progress bar. */
+@keyframes ai-resolve-bar {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(300%); }
 }
 
 /* --- Occasional glitch artifacts -----------------------------------------
@@ -362,6 +370,6 @@ body {
   animation: rogue-bg-pulse 1.6s ease-in-out infinite;
 }
 @keyframes rogue-bg-pulse {
-  0%, 100% { background: rgba(232, 63, 107, 0.06); }
-  50% { background: rgba(232, 63, 107, 0.24); }
+  0%, 100% { background: rgba(232, 63, 107, 0.1); }
+  50% { background: rgba(232, 63, 107, 0.38); }
 }

@@ -6,7 +6,7 @@ import dynamic from 'next/dynamic';
 import type { Socket } from 'socket.io-client';
 import { useAuthStore } from '@/lib/auth-store';
 import { createConsoleSocket, NormalizedCommand } from '@/lib/socket-client';
-import { kDirectiveApi, SystemStateDto } from '@/lib/api-client';
+import { kDirectiveApi, kStreamApi, SystemStateDto } from '@/lib/api-client';
 import { Panel } from '@/components/Panel';
 import { Blackwall, ThreatLevel } from '@/components/Blackwall';
 import { LockdownOverlay } from '@/components/LockdownOverlay';
@@ -14,7 +14,6 @@ import { TopBar } from '@/components/TopBar';
 import { NotesPanel } from '@/components/NotesPanel';
 import { InstructionsPanel } from '@/components/InstructionsPanel';
 import { IncidentsPanel, IncidentRecord } from '@/components/IncidentsPanel';
-import { IncidentConfirmModal } from '@/components/IncidentConfirmModal';
 import { NodeGrid } from '@/components/NodeGrid';
 import { RogueAiPanel, RogueAiActive } from '@/components/RogueAiPanel';
 import { BlackboxPanel } from '@/components/BlackboxPanel';
@@ -37,12 +36,18 @@ interface FeedLine {
 
 type ConsoleView = 'OVERVIEW' | 'BLACKBOX' | 'AUDIT';
 
+// Matches STEP_WINDOW_MS in rogue-ai.service.ts on the backend — bumped
+// from 15s to 30s, see the honesty flag on RogueAiPanel for why.
+const ROGUE_AI_STEP_WINDOW_MS = 30_000;
+
 // Alarm fatigue needs at least this many consecutive, unconfirmed LATCH
 // incidents before new ones get pushed to the deprioritized tray. See the
 // honesty flag on IncidentRecord — this is a per-tier client heuristic,
 // not the per-node mechanic described in the brief, because the node
 // identity isn't on the wire yet.
 const FATIGUE_THRESHOLD = 3;
+
+const DEBUG_INJECT_TYPES = ['LATCH', 'SPLICE', 'SHATTER', 'ROGUE_AI'] as const;
 
 let feedIdCounter = 0;
 
@@ -68,8 +73,8 @@ export default function ConsolePage() {
   const [view, setView] = useState<ConsoleView>('OVERVIEW');
   const [notesOpen, setNotesOpen] = useState(false);
   const [replayIncidentId, setReplayIncidentId] = useState<string | null>(null);
-  const [confirmIncident, setConfirmIncident] = useState<IncidentRecord | null>(null);
   const [terminalInsert, setTerminalInsert] = useState<{ token: number; text: string } | null>(null);
+  const [debugBusyType, setDebugBusyType] = useState<(typeof DEBUG_INJECT_TYPES)[number] | null>(null);
 
   function copyToTerminal(text: string) {
     setTerminalInsert({ token: Date.now(), text });
@@ -79,15 +84,21 @@ export default function ConsolePage() {
   // the same socket events the signal feed already listens to. Session
   // scoped by construction — see honesty flags in IncidentsPanel/RogueAiPanel.
   const [incidents, setIncidents] = useState<IncidentRecord[]>([]);
-  const [rogueAiActive, setRogueAiActive] = useState<RogueAiActive | null>(null);
+  // NOTE (bugfix): this used to be a single RogueAiActive | null — with more
+  // than one Rogue AI incident active at once (which the simulator can
+  // absolutely produce), the second one landing would silently overwrite
+  // the first's containment progress, and ROGUE_AI_TRANSITION events for
+  // the first would then get misapplied to the second. An array, keyed by
+  // rogueAiIncidentId, tracks each independently; the overlay renders one
+  // floating panel per active incident, stacked.
+  const [rogueAiList, setRogueAiList] = useState<RogueAiActive[]>([]);
 
-  // Mirrors rogueAiActive into the shared threat store so BackgroundColumns
+  // Mirrors rogueAiList into the shared threat store so BackgroundColumns
   // (mounted in layout.tsx, outside this component's tree) can switch into
-  // ALERT mode. Deliberately just an effect watching existing state rather
-  // than touching the 4 call sites that already set rogueAiActive below.
+  // ALERT mode.
   useEffect(() => {
-    useThreatStore.getState().setRogueAiActive(!!rogueAiActive);
-  }, [rogueAiActive]);
+    useThreatStore.getState().setRogueAiActive(rogueAiList.length > 0);
+  }, [rogueAiList]);
 
   useEffect(() => {
     hydrate();
@@ -177,7 +188,7 @@ export default function ConsolePage() {
       'INCIDENT_AWAITING_OPERATOR',
       (payload: { incidentId: string; tier: 'LATCH' | 'SPLICE' | 'SHATTER'; rogueAi?: boolean; rogueAiIncidentId?: string }) => {
         pushFeed(`Incident awaiting operator — tier ${payload.tier} — ${payload.incidentId}`, 'warn');
-        bumpThreat(payload.rogueAi ? 'ROGUE_AI' : 'ACTIVE', payload.rogueAi ? 15_000 : 8_000);
+        bumpThreat(payload.rogueAi ? 'ROGUE_AI' : 'ACTIVE', payload.rogueAi ? ROGUE_AI_STEP_WINDOW_MS : 8_000);
 
         // Alarm fatigue heuristic — see FATIGUE_THRESHOLD above.
         let deprioritized = false;
@@ -189,15 +200,16 @@ export default function ConsolePage() {
         upsertIncident(
           payload.incidentId,
           { status: payload.rogueAi ? 'ROGUE_AI_ACTIVE' : 'AWAITING_OPERATOR', deprioritized },
-          { tier: payload.tier, rogueAi: !!payload.rogueAi },
+          { tier: payload.tier, rogueAi: !!payload.rogueAi, rogueAiIncidentId: payload.rogueAiIncidentId },
         );
 
         if (payload.rogueAi && payload.rogueAiIncidentId) {
-          setRogueAiActive({
-            rogueAiIncidentId: payload.rogueAiIncidentId,
-            state: 'DETECTED',
-            deadlineAt: Date.now() + 15_000,
-          });
+          const rogueAiIncidentId = payload.rogueAiIncidentId;
+          setRogueAiList((prev) =>
+            prev.some((r) => r.rogueAiIncidentId === rogueAiIncidentId)
+              ? prev
+              : [...prev, { rogueAiIncidentId, state: 'DETECTED', deadlineAt: Date.now() + ROGUE_AI_STEP_WINDOW_MS }],
+          );
         }
       },
     );
@@ -207,21 +219,16 @@ export default function ConsolePage() {
       void refreshSystemState();
     });
 
-    // Closes the loop the confirm modal opens: a successful
-    // CONFIRM_KURO_ICE_ACTION resolves the incident and, for LATCH, resets
-    // the alarm-fatigue streak (the operator paid attention).
+    // A successful CONFIRM_KURO_ICE_ACTION resolves the incident and, for
+    // LATCH, resets the alarm-fatigue streak (the operator paid attention).
     s.on('command_result', (payload: { command: NormalizedCommand; result: Record<string, unknown> }) => {
       if (payload.command.type === 'CONFIRM_KURO_ICE_ACTION') {
         const incidentId = payload.command.incidentId;
         pushFeed(`Incident ${incidentId} confirmed by operator.`, 'signal');
-        setIncidents((prev) =>
-          prev.map((i) => (i.id === incidentId ? { ...i, status: 'RESOLVED', updatedAt: new Date().toISOString() } : i)),
-        );
-        setConfirmIncident((prev) => (prev?.id === incidentId ? null : prev));
         setIncidents((prev) => {
           const resolved = prev.find((i) => i.id === incidentId);
           if (resolved?.tier === 'LATCH') latchStreakRef.current = 0;
-          return prev;
+          return prev.map((i) => (i.id === incidentId ? { ...i, status: 'RESOLVED', updatedAt: new Date().toISOString() } : i));
         });
       }
     });
@@ -235,11 +242,7 @@ export default function ConsolePage() {
       const terminal = ['NEUTRALIZED', 'ESCALATED', 'SPREAD'].includes(payload.nextState);
       setIncidents((prev) =>
         prev.map((i) => {
-          // We don't get incidentId on this event, only rogueAiIncidentId —
-          // match against whatever incident currently owns the active
-          // Rogue AI thread rather than trying to correlate IDs that
-          // aren't in the payload.
-          if (!i.rogueAi || i.status !== 'ROGUE_AI_ACTIVE') return i;
+          if (i.rogueAiIncidentId !== payload.rogueAiIncidentId) return i;
           if (payload.nextState === 'NEUTRALIZED') return { ...i, status: 'RESOLVED', updatedAt: new Date().toISOString() };
           if (payload.nextState === 'ESCALATED' || payload.nextState === 'SPREAD')
             return { ...i, status: 'ESCALATED', updatedAt: new Date().toISOString() };
@@ -247,30 +250,43 @@ export default function ConsolePage() {
         }),
       );
 
-      setRogueAiActive((prev) =>
-        prev
-          ? { ...prev, state: payload.nextState, deadlineAt: terminal ? prev.deadlineAt : Date.now() + 15_000 }
-          : prev,
+      setRogueAiList((prev) =>
+        prev.map((r) =>
+          r.rogueAiIncidentId === payload.rogueAiIncidentId
+            ? { ...r, state: payload.nextState, deadlineAt: terminal ? r.deadlineAt : Date.now() + ROGUE_AI_STEP_WINDOW_MS }
+            : r,
+        ),
       );
 
-      if (payload.outcome === 'NEUTRALIZED' || terminal) {
-        if (threatDecayRef.current) clearTimeout(threatDecayRef.current);
-        setThreatLevel('CALM');
+      if (terminal) {
         // Give the operator a beat to see the final state land before the
         // overlay disappears — instant close would read as a glitch.
-        setTimeout(() => setRogueAiActive(null), 4_000);
-      } else {
-        bumpThreat('ROGUE_AI', 15_000);
+        setTimeout(() => {
+          setRogueAiList((prev) => prev.filter((r) => r.rogueAiIncidentId !== payload.rogueAiIncidentId));
+        }, 4_000);
       }
+
+      setRogueAiList((current) => {
+        // Recompute threat level from what's still actually active, rather
+        // than assuming this transition is the only thing going on — with
+        // multiple Rogue AI incidents, one resolving shouldn't necessarily
+        // calm the wall down if another is still mid-fight.
+        const stillActive = current.filter((r) => r.rogueAiIncidentId !== payload.rogueAiIncidentId || !terminal);
+        if (stillActive.length > 0) {
+          bumpThreat('ROGUE_AI', ROGUE_AI_STEP_WINDOW_MS);
+        } else if (threatDecayRef.current) {
+          clearTimeout(threatDecayRef.current);
+          setThreatLevel('CALM');
+        }
+        return current;
+      });
     });
-    s.on('ROGUE_AI_RESOLVED_AUTONOMOUSLY', () => {
+    s.on('ROGUE_AI_RESOLVED_AUTONOMOUSLY', (payload: { rogueAiIncidentId: string }) => {
       pushFeed('Rogue AI resolved autonomously (preemptive node lockdown).', 'danger');
-      if (threatDecayRef.current) clearTimeout(threatDecayRef.current);
-      setThreatLevel('CALM');
-      setRogueAiActive(null);
+      setRogueAiList((prev) => prev.filter((r) => r.rogueAiIncidentId !== payload.rogueAiIncidentId));
       setIncidents((prev) =>
         prev.map((i) =>
-          i.rogueAi && i.status === 'ROGUE_AI_ACTIVE'
+          i.rogueAiIncidentId === payload.rogueAiIncidentId
             ? { ...i, status: 'RESOLVED', updatedAt: new Date().toISOString() }
             : i,
         ),
@@ -316,14 +332,12 @@ export default function ConsolePage() {
   // NOTE (bugfix): heartbeat was manual-only — an open tab wasn't enough to
   // keep the dead man's switch happy, so autonomous mode kicked in almost
   // immediately in practice and every incident got auto-resolved before
-  // ever reaching AWAITING_OPERATOR (see AutonomousModeService.checkForTimeout
-  // on the backend — silent, no gateway event, so nothing showed up here
-  // either). An open console tab having someone at it is exactly what the
-  // heartbeat is meant to represent, so it's sent automatically now.
-  // Paused while already in lockdown — recordOperatorHeartbeat on the
-  // backend hands control back the moment a heartbeat lands during an
-  // AUTO_TIMEOUT lockout, which would silently clear "Stand down" out from
-  // under the operator without them doing anything.
+  // ever reaching AWAITING_OPERATOR. An open console tab having someone at
+  // it is exactly what the heartbeat is meant to represent, so it's sent
+  // automatically now. Paused while already in lockdown — a heartbeat
+  // landing during an AUTO_TIMEOUT lockout hands control back silently,
+  // clearing "Stand down" out from under the operator without them doing
+  // anything.
   useEffect(() => {
     if (!session || systemState?.autonomousModeActive) return;
     void sendHeartbeat(true);
@@ -347,19 +361,27 @@ export default function ConsolePage() {
     }
   }
 
+  async function debugInject(type: (typeof DEBUG_INJECT_TYPES)[number]) {
+    if (!session || debugBusyType) return;
+    setDebugBusyType(type);
+    try {
+      const result = await kStreamApi.debugInject(session.accessToken, type);
+      pushFeed(`[DEBUG] Injected ${type} incident — ${result.incidentId}`, 'warn');
+    } catch (err) {
+      pushFeed(`[DEBUG] Inject failed: ${err instanceof Error ? err.message : 'unknown error'}`, 'danger');
+    } finally {
+      setDebugBusyType(null);
+    }
+  }
+
+  function openCase(incidentId: string) {
+    setReplayIncidentId(incidentId);
+    setView('BLACKBOX');
+  }
+
   if (!session) return null;
 
   const isAutonomous = !!systemState?.autonomousModeActive;
-
-  function handleIncidentRowClick(incident: IncidentRecord) {
-    if (incident.status === 'AWAITING_OPERATOR') {
-      setConfirmIncident(incident);
-    } else if (incident.status === 'RESOLVED' || incident.status === 'ESCALATED') {
-      setReplayIncidentId(incident.id);
-      setView('BLACKBOX');
-    }
-    // ROGUE_AI_ACTIVE rows: already surfaced via the auto-opening overlay below.
-  }
 
   return (
     <>
@@ -368,7 +390,9 @@ export default function ConsolePage() {
           it in DOM order so it stacks on top of it, both still behind every
           normal-flow panel). pointer-events-none: it's a mood layer, never
           intercepts a click. */}
-      {rogueAiActive && <div className="fixed inset-0 z-[-1] pointer-events-none rogue-bg-pulse" aria-hidden="true" />}
+      {rogueAiList.length > 0 && (
+        <div className="fixed inset-0 z-[-1] pointer-events-none rogue-bg-pulse" aria-hidden="true" />
+      )}
 
       {/* Real blocking lockdown — everything behind stops responding to
           clicks (pointer-events-none on the wrapper below); "Stand down"
@@ -376,36 +400,32 @@ export default function ConsolePage() {
       {isAutonomous && <LockdownOverlay onStandDown={toggleAutonomous} busy={autonomousBusy} />}
 
       {/* Rogue AI auto-opens — this is the point of the mechanic, an
-          operator shouldn't have to go looking for it. NOTE (bugfix): this
-          used to be a full-screen backdrop (bg-void/85 covering everything)
-          — it looked dramatic but silently ate every click and keystroke
-          behind it, including the terminal the operator actually needs to
-          type the response into. No backdrop now: a floating panel pinned
-          near the top, everything else (terminal included) stays fully
-          interactive underneath. Not dismissible by clicking elsewhere on
-          purpose — it clears itself via ROGUE_AI_TRANSITION /
-          ROGUE_AI_RESOLVED_AUTONOMOUSLY (see the socket effect above). */}
-      {rogueAiActive && (
-        <div className="fixed top-16 left-1/2 -translate-x-1/2 z-[555] w-full max-w-2xl px-3 pointer-events-none">
-          <div className="panel-border bg-panel border-2 border-danger shadow-[0_0_50px_rgba(232,63,107,0.5)] pointer-events-auto">
-            <div className="border-b-2 border-danger px-3 py-2">
-              <span className="font-display text-xs tracking-[0.2em] text-danger uppercase">
-                [ Rogue AI containment ]
-              </span>
+          operator shouldn't have to go looking for it. Positioned below the
+          top row (not centered over it) so Perimeter Defense stays visible
+          — it used to sit right on top of it. No backdrop: floating panels,
+          terminal and everything else stays fully interactive underneath.
+          One panel per active incident, stacked, so a second Rogue AI
+          landing doesn't bury the first one's progress. Not dismissible by
+          clicking elsewhere on purpose — each clears itself via
+          ROGUE_AI_TRANSITION / ROGUE_AI_RESOLVED_AUTONOMOUSLY above. */}
+      {rogueAiList.length > 0 && (
+        <div className="fixed top-[300px] left-1/2 -translate-x-1/2 z-[555] w-full max-w-2xl px-3 pointer-events-none flex flex-col gap-3">
+          {rogueAiList.map((active) => (
+            <div
+              key={active.rogueAiIncidentId}
+              className="panel-border bg-panel border-2 border-danger shadow-[0_0_50px_rgba(232,63,107,0.5)] pointer-events-auto"
+            >
+              <div className="border-b-2 border-danger px-3 py-2">
+                <span className="font-display text-xs tracking-[0.2em] text-danger uppercase">
+                  [ Rogue AI containment ]
+                </span>
+              </div>
+              <div className="p-4">
+                <RogueAiPanel active={active} onCopyToTerminal={copyToTerminal} />
+              </div>
             </div>
-            <div className="p-4">
-              <RogueAiPanel active={rogueAiActive} onCopyToTerminal={copyToTerminal} />
-            </div>
-          </div>
+          ))}
         </div>
-      )}
-
-      {confirmIncident && (
-        <IncidentConfirmModal
-          incident={confirmIncident}
-          onCopyToTerminal={copyToTerminal}
-          onClose={() => setConfirmIncident(null)}
-        />
       )}
 
       {notesOpen && (
@@ -453,6 +473,25 @@ export default function ConsolePage() {
               {label}
             </button>
           ))}
+
+          {/* Client-side gate only — the endpoint itself is admin-only
+              server-side too (RolesGuard), this is purely UX (don't show a
+              button a non-admin would get a 403 clicking). */}
+          {role === 'ADMIN' && (
+            <div className="ml-auto flex items-center gap-1.5">
+              <span className="text-ash text-[9px] tracking-widest uppercase mr-1">Force incident:</span>
+              {DEBUG_INJECT_TYPES.map((type) => (
+                <button
+                  key={type}
+                  onClick={() => void debugInject(type)}
+                  disabled={debugBusyType !== null}
+                  className="border border-ash text-ash hover:border-ash-bright hover:text-ash-bright font-display tracking-widest uppercase text-[9px] px-2 py-1 transition-colors disabled:opacity-40"
+                >
+                  {debugBusyType === type ? '…' : type.replace('_', ' ')}
+                </button>
+              ))}
+            </div>
+          )}
         </nav>
 
         <main className="flex-1 min-h-0 p-8 overflow-y-auto">
@@ -506,7 +545,7 @@ export default function ConsolePage() {
                 <div className="col-span-2 min-h-0">
                   <Panel title="Incidents" className="h-full">
                     <div className="p-3 h-full">
-                      <IncidentsPanel incidents={incidents} onRowClick={handleIncidentRowClick} onCopyToTerminal={copyToTerminal} />
+                      <IncidentsPanel incidents={incidents} onCopyToTerminal={copyToTerminal} onOpenCase={openCase} />
                     </div>
                   </Panel>
                 </div>

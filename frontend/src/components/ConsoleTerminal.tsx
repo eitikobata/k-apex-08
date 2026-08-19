@@ -154,6 +154,11 @@ export function ConsoleTerminal({
     if (!insertRequest || !termRef.current) return;
     lineBufferRef.current += insertRequest.text;
     termRef.current.write(insertRequest.text);
+    // Clicking the button that triggers this steals DOM focus away from
+    // xterm's hidden input — without this, every "append to terminal"
+    // click meant an extra manual click back into the terminal before you
+    // could keep typing or hit Enter. .focus() puts it right back.
+    termRef.current.focus();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [insertRequest?.token]);
 

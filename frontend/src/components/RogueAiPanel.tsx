@@ -18,14 +18,16 @@ const STEP_LABELS: Record<(typeof STEPS)[number], string> = {
   NEUTRALIZED: 'Purge',
 };
 const TERMINAL_BAD = new Set(['ESCALATED', 'SPREAD']);
-const STEP_WINDOW_MS = 15_000;
+const STEP_WINDOW_MS = 30_000;
 
-// NOTE (honesty flag): the 15s-per-step window is a fixed rule from the
-// project brief and matches RogueAiIncident.stepDeadlineAt in the backend
-// schema, but ROGUE_AI_TRANSITION's socket payload doesn't broadcast the
-// actual deadline — only { rogueAiIncidentId, outcome, nextState }. This
-// countdown is a client-side mirror (reset to 15s on every transition), not
-// a server-confirmed remaining time.
+// NOTE (honesty flag): the window matches STEP_WINDOW_MS in rogue-ai.service.ts
+// on the backend (bumped from 15s to 30s — 15s wasn't enough time to read the
+// expected command, switch to the terminal, type it, and confirm, especially
+// with more than one Rogue AI active). ROGUE_AI_TRANSITION's socket payload
+// still doesn't broadcast the actual deadline — only { rogueAiIncidentId,
+// outcome, nextState } — so this countdown is a client-side mirror (reset to
+// 30s on every transition), not a server-confirmed remaining time. If
+// STEP_WINDOW_MS changes again on the backend, this needs to match.
 //
 // NOTE (design decision): this used to have one-click ISOLATE/TRACE/PURGE
 // buttons that issued the command directly over the socket. Removed on

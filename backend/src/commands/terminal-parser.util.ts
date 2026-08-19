@@ -5,8 +5,18 @@
  * a NormalizedCommand.
  *
  * Grammar:
- *   CONFIRM SHATTER //<incidentId>
- *   CONFIRM SPLICE //<incidentId>
+ *   CONFIRM [<anything>] //<incidentId>   (the word between CONFIRM and the
+ *                                          target, if any, is never checked —
+ *                                          CONFIRM_KURO_ICE_ACTION only ever
+ *                                          carries {incidentId}; CommandService
+ *                                          looks the real tier up from the DB
+ *                                          itself. This is deliberately lenient
+ *                                          so different incident tiers can ask
+ *                                          for different amounts of typed
+ *                                          friction on the frontend — "CONFIRM
+ *                                          //<id>", "CONFIRM SPLICE //<id>",
+ *                                          and "CONFIRM SHATTER //<id>" all do
+ *                                          the exact same thing here.)
  *   ISOLATE //<rogueAiIncidentId>
  *   TRACE //<rogueAiIncidentId>
  *   PURGE //<rogueAiIncidentId> --confirm
@@ -37,10 +47,6 @@ export function parseTerminalCommand(rawInput: string): ParseResult {
   const verb = tokens[0].toUpperCase();
 
   if (verb === 'CONFIRM') {
-    const tier = tokens[1]?.toUpperCase();
-    if (tier !== 'SHATTER' && tier !== 'SPLICE') {
-      return { ok: false, error: 'CONFIRM requires SHATTER or SPLICE' };
-    }
     const target = extractTarget(trimmed);
     if (!target) return { ok: false, error: 'Missing //<incidentId> target' };
     return { ok: true, command: { type: 'CONFIRM_KURO_ICE_ACTION', incidentId: target } };

@@ -11,14 +11,14 @@ const HEARTBEAT_MISS_CHANCE = 0.03;
 // Odds (per tick) that the simulator kicks off a deliberate multi-stage
 // attack sequence somewhere in the network, vs a rogue-AI incursion, vs
 // nothing beyond normal per-node noise.
-// NOTE: bumped from 0.03/0.01 for local testing — at the original values,
-// manual testing meant averaging one usable incident every ~2-3min and one
-// Rogue AI every ~8min, which made iterating on the frontend painful. A
-// debug injection endpoint now exists too (KStreamController, admin-only)
-// for on-demand testing — these odds are for ambient background activity,
-// not the only way to get an incident on screen.
-const MULTI_STAGE_CHANCE = 0.15;
-const ROGUE_AI_CHANCE = 0.08;
+// NOTE: original values (0.03/0.01) were too slow for testing; 0.15/0.08
+// turned out too fast in practice — multiple Rogue AI incidents were
+// landing on top of each other before the first was resolved. Settled
+// here as a middle ground. The debug injection endpoint (KStreamController,
+// admin-only) remains the right tool for "I need an incident right now" —
+// these odds are just for ambient background activity.
+const MULTI_STAGE_CHANCE = 0.08;
+const ROGUE_AI_CHANCE = 0.025;
 
 /**
  * Generates synthetic telemetry for the KMC network. Each NetworkNode has

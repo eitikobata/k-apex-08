@@ -8,7 +8,14 @@ import type { Redis } from 'ioredis';
 import { KBlackboxService } from '../k-blackbox/k-blackbox.service';
 import { transitionRogueAi, RogueAiCommand, RogueAiState } from './rogue-ai-state-machine.util';
 
-export const STEP_WINDOW_MS = 15_000;
+// NOTE: bumped from 15s to 30s — the original window was too tight to
+// realistically read the expected command, switch to the terminal, type
+// it, and confirm within the deadline (especially with multiple Rogue AI
+// incidents active at once). This is the single source of truth for the
+// countdown — the frontend mirrors this value in RogueAiPanel.tsx since
+// ROGUE_AI_TRANSITION's socket payload doesn't broadcast the deadline
+// itself (see the honesty flag there); keep both in sync if this changes.
+export const STEP_WINDOW_MS = 30_000;
 const DEADLINE_SWEEP_INTERVAL_MS = 2000;
 const GATEWAY_EVENTS_CHANNEL = 'kapex08:gateway:events';
 

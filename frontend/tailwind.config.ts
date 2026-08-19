@@ -9,17 +9,15 @@ const config: Config = {
         // maps to a real signal in the system (see brief: threat tiers,
         // system vs alert state), not chosen for looks alone.
         void: '#000000',
-        // NOTE (bugfix): was pure opaque #000000, identical to the fixed
-        // z-index:-1 ambient background layer (BackgroundColumns) sitting
-        // behind everything. An opaque panel fully occludes whatever's
-        // behind it — the scrolling background text could only ever show
-        // through the ~20px gaps BETWEEN panels, which is too thin to read
-        // at all. A hair of transparency lets it bleed through faintly
-        // under panel content too (matches the brief: "always visible,
-        // dim gray, behind the panels" — not "only in the cracks").
-        // Readability isn't at risk: panel text uses signal/danger/ash,
-        // all high-contrast against near-black regardless.
-        panel: 'rgba(3, 3, 4, 0.93)',
+        // NOTE (second attempt — first bump to 0.93 wasn't visibly enough).
+        // Pushed much further this round (0.78 — ~22% see-through). If the
+        // ambient background STILL doesn't show at all (not even faintly)
+        // after this, it's very likely a real render bug, not a subtlety
+        // problem, and worth checking in DevTools: Elements panel, search
+        // for class "bg-columns" — does the node exist? Does it have
+        // non-zero width/height? That'll tell us which half of the
+        // problem we're actually looking at.
+        panel: 'rgba(3, 3, 4, 0.78)',
         grid: '#181c22', // hairlines / dividers
         signal: {
           DEFAULT: '#3fd0e8', // cold cyan — system/LATCH/nominal
