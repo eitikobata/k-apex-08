@@ -69,7 +69,11 @@ export class SimulatorService implements OnModuleInit {
         // (still noisier than normal nodes, so the "some nodes you learn
         // to distrust" idea from the brief survives) — see the threshold
         // bump alongside this for the other half of the fix.
-        baselineNoiseRate: isChronicallyFlaky ? 0.12 : 0.08,
+        // NOTE: 0.12 turned out too quiet (fair — 0.4 was way too loud).
+        // Meeting in the middle at 0.2: expected ~2.4 events/60s for a
+        // flaky node vs GENERIC_CORRELATION's threshold of 5 — occasional
+        // LATCH from a flaky node, not constant, not never.
+        baselineNoiseRate: isChronicallyFlaky ? 0.2 : 0.08,
         severityBias: isChronicallyFlaky ? 0.05 : 0.15,
         isChronicallyFlaky,
         lastHeartbeatAt: new Date(),
