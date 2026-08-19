@@ -472,7 +472,7 @@ export default function ConsolePage() {
             [
               ['OVERVIEW', 'Overview'],
               ['BLACKBOX', 'K-BLACKBOX'],
-              ['AUDIT', 'Audit log'],
+              ['AUDIT', 'K-BLACKTAPE'],
             ] as [ConsoleView, string][]
           ).map(([key, label]) => (
             <button
@@ -608,7 +608,7 @@ export default function ConsolePage() {
           )}
 
           {view === 'AUDIT' && (
-            <Panel title="K-BLACKTAPE — audit log" className="h-full">
+            <Panel title="K-BLACKTAPE" className="h-full">
               <div className="p-3 h-full">
                 <AuditLogPanel accessToken={session.accessToken} />
               </div>
