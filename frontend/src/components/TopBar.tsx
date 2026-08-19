@@ -16,27 +16,27 @@ export function TopBar({
   onOpenNotes: () => void;
 }) {
   return (
-    <header className="relative flex items-center justify-between px-3 py-2.5 border-b-2 border-danger shrink-0">
+    <header className="relative bg-void flex items-center justify-between px-3 py-2.5 border-b-2 border-danger shrink-0">
       <div className="font-display text-sm tracking-[0.25em] text-danger uppercase">
         K-APEX-08 <span className="text-ash font-medium">{'//'} Kobata Matrix Corporation</span>
       </div>
       <div className="flex items-center gap-3.5 text-[11px]">
         <span className={connected ? 'text-signal' : 'text-danger'}>{connected ? '● LINK UP' : '○ LINK DOWN'}</span>
         {isAutonomous && (
-          <span className="border border-danger text-danger font-display tracking-widest uppercase text-[10px] px-2.5 py-1">
+          <span className="bg-void border border-danger text-danger font-display tracking-widest uppercase text-[10px] px-2.5 py-1">
             AUTONOMOUS MODE ACTIVE
           </span>
         )}
         <button
           onClick={onOpenNotes}
-          className="border border-ash text-ash hover:border-ash-bright hover:text-ash-bright font-display tracking-widest uppercase text-[10px] px-2.5 py-1 transition-colors"
+          className="bg-void border border-ash text-ash hover:border-ash-bright hover:text-ash-bright font-display tracking-widest uppercase text-[10px] px-2.5 py-1 transition-colors"
         >
           Notes
         </button>
         {isAdmin && (
           <a
             href="/admin"
-            className="border border-ash text-ash hover:border-ash-bright hover:text-ash-bright font-display tracking-widest uppercase text-[10px] px-2.5 py-1 transition-colors"
+            className="bg-void border border-ash text-ash hover:border-ash-bright hover:text-ash-bright font-display tracking-widest uppercase text-[10px] px-2.5 py-1 transition-colors"
           >
             Admin panel
           </a>

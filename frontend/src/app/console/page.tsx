@@ -41,13 +41,6 @@ type ConsoleView = 'OVERVIEW' | 'BLACKBOX' | 'AUDIT';
 // from 15s to 30s, see the honesty flag on RogueAiPanel for why.
 const ROGUE_AI_STEP_WINDOW_MS = 30_000;
 
-// Alarm fatigue needs at least this many consecutive, unconfirmed LATCH
-// incidents before new ones get pushed to the deprioritized tray. See the
-// honesty flag on IncidentRecord — this is a per-tier client heuristic,
-// not the per-node mechanic described in the brief, because the node
-// identity isn't on the wire yet.
-const FATIGUE_THRESHOLD = 3;
-
 const DEBUG_INJECT_TYPES = ['LATCH', 'SPLICE', 'SHATTER', 'ROGUE_AI'] as const;
 
 let feedIdCounter = 0;
@@ -69,7 +62,6 @@ export default function ConsolePage() {
   const socketRef = useRef<Socket | null>(null);
   const feedContainerRef = useRef<HTMLDivElement>(null);
   const threatDecayRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const latchStreakRef = useRef(0);
 
   const [view, setView] = useState<ConsoleView>('OVERVIEW');
   const [notesOpen, setNotesOpen] = useState(false);
@@ -191,16 +183,9 @@ export default function ConsolePage() {
         pushFeed(`Incident awaiting operator — tier ${payload.tier} — ${payload.incidentId}`, 'warn');
         bumpThreat(payload.rogueAi ? 'ROGUE_AI' : 'ACTIVE', payload.rogueAi ? ROGUE_AI_STEP_WINDOW_MS : 8_000);
 
-        // Alarm fatigue heuristic — see FATIGUE_THRESHOLD above.
-        let deprioritized = false;
-        if (payload.tier === 'LATCH' && !payload.rogueAi) {
-          latchStreakRef.current += 1;
-          deprioritized = latchStreakRef.current > FATIGUE_THRESHOLD;
-        }
-
         upsertIncident(
           payload.incidentId,
-          { status: payload.rogueAi ? 'ROGUE_AI_ACTIVE' : 'AWAITING_OPERATOR', deprioritized },
+          { status: payload.rogueAi ? 'ROGUE_AI_ACTIVE' : 'AWAITING_OPERATOR' },
           { tier: payload.tier, rogueAi: !!payload.rogueAi, rogueAiIncidentId: payload.rogueAiIncidentId },
         );
 
@@ -220,18 +205,25 @@ export default function ConsolePage() {
       void refreshSystemState();
     });
 
-    // A successful CONFIRM_KURO_ICE_ACTION resolves the incident and, for
-    // LATCH, resets the alarm-fatigue streak (the operator paid attention).
+    // A successful CONFIRM_KURO_ICE_ACTION resolves the incident.
     s.on('command_result', (payload: { command: NormalizedCommand; result: Record<string, unknown> }) => {
       if (payload.command.type === 'CONFIRM_KURO_ICE_ACTION') {
         const incidentId = payload.command.incidentId;
         pushFeed(`Incident ${incidentId} confirmed by operator.`, 'signal');
-        setIncidents((prev) => {
-          const resolved = prev.find((i) => i.id === incidentId);
-          if (resolved?.tier === 'LATCH') latchStreakRef.current = 0;
-          return prev.map((i) => (i.id === incidentId ? { ...i, status: 'RESOLVED', updatedAt: new Date().toISOString() } : i));
-        });
+        setIncidents((prev) =>
+          prev.map((i) => (i.id === incidentId ? { ...i, status: 'RESOLVED', updatedAt: new Date().toISOString() } : i)),
+        );
       }
+    });
+    // Real backend enforcement now (k-directive.service.ts's
+    // sweepExpiredOperatorDeadlines) — a LATCH/SPLICE/SHATTER incident
+    // that sat past its operatorDeadlineAt without confirmation becomes
+    // ESCALATED, same as an expired Rogue AI step.
+    s.on('INCIDENT_ESCALATED', (payload: { incidentId: string; tier: string }) => {
+      pushFeed(`Incident ${payload.incidentId} escalated — operator deadline expired.`, 'danger');
+      setIncidents((prev) =>
+        prev.map((i) => (i.id === payload.incidentId ? { ...i, status: 'ESCALATED', updatedAt: new Date().toISOString() } : i)),
+      );
     });
     s.on('command_error', (payload: { message: string }) => {
       pushFeed(`Command failed: ${payload.message}`, 'danger');
@@ -380,6 +372,20 @@ export default function ConsolePage() {
     setView('BLACKBOX');
   }
 
+  // NOTE (honesty flag): "AI resolves" in IncidentsPanel is still pure
+  // flavor — no API call, the real Incident row in the backend stays
+  // AWAITING_OPERATOR/whatever it actually is. This only updates local
+  // frontend state so the row stops showing as actionable and its timer
+  // stops (otherwise a "successful" AI resolve would sit there still
+  // ticking down toward ESCALATED, which reads as broken even though
+  // it's cosmetic on purpose). If you open this incident in K-BLACKBOX
+  // later, the backend's real status may not match what's shown here.
+  function handleAiResolved(incidentId: string) {
+    setIncidents((prev) =>
+      prev.map((i) => (i.id === incidentId ? { ...i, status: 'RESOLVED', updatedAt: new Date().toISOString() } : i)),
+    );
+  }
+
   if (!session) return null;
 
   const isAutonomous = !!systemState?.autonomousModeActive;
@@ -472,7 +478,7 @@ export default function ConsolePage() {
             <button
               key={key}
               onClick={() => setView(key)}
-              className={`font-display tracking-widest uppercase px-3 py-1.5 border transition-colors ${
+              className={`bg-void font-display tracking-widest uppercase px-3 py-1.5 border transition-colors ${
                 view === key
                   ? 'border-danger text-danger'
                   : 'border-ash text-ash hover:border-ash-bright hover:text-ash-bright'
@@ -493,7 +499,7 @@ export default function ConsolePage() {
                   key={type}
                   onClick={() => void debugInject(type)}
                   disabled={debugBusyType !== null}
-                  className="border border-ash text-ash hover:border-ash-bright hover:text-ash-bright font-display tracking-widest uppercase text-[9px] px-2 py-1 transition-colors disabled:opacity-40"
+                  className="bg-void border border-ash text-ash hover:border-ash-bright hover:text-ash-bright font-display tracking-widest uppercase text-[9px] px-2 py-1 transition-colors disabled:opacity-40"
                 >
                   {debugBusyType === type ? '…' : type.replace('_', ' ')}
                 </button>
@@ -549,11 +555,11 @@ export default function ConsolePage() {
                 </Panel>
               </div>
 
-              <div className="grid grid-cols-[260px_1fr_300px_260px] gap-5 h-56 shrink-0">
+              <div className="grid grid-cols-[260px_1fr_300px_260px] gap-5 h-64 shrink-0">
                 <div className="col-span-2 min-h-0">
                   <Panel title="Incidents" className="h-full">
-                    <div className="p-3 h-full">
-                      <IncidentsPanel incidents={incidents} onCopyToTerminal={copyToTerminal} onOpenCase={openCase} />
+                    <div className="h-full flex flex-col p-3">
+                      <IncidentsPanel incidents={incidents} onCopyToTerminal={copyToTerminal} onOpenCase={openCase} onAiResolved={handleAiResolved} />
                     </div>
                   </Panel>
                 </div>

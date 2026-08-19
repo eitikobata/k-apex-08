@@ -62,7 +62,7 @@ export function AccountMenu({ accessToken }: { accessToken: string }) {
     <div className="relative">
       <button
         onClick={() => setOpen((v) => !v)}
-        className="flex items-center gap-2 border border-grid hover:border-ash px-2.5 py-1 transition-colors"
+        className="bg-void flex items-center gap-2 border border-grid hover:border-ash px-2.5 py-1 transition-colors"
       >
         <span className="text-ash-bright text-[11px]">{operatorId ? `#${operatorId.slice(0, 8)}…` : '—'}</span>
         <span className="text-danger text-[10px] tracking-wider">{role ?? '—'}</span>

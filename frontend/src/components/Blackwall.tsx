@@ -129,7 +129,15 @@ export function Blackwall({ threatLevel }: { threatLevel: ThreatLevel }) {
         if (points.length < 2) continue;
 
         const rgb = maxHeat > 0.55 ? HOT_RGB : maxHeat > 0.15 ? SIGNAL_RGB : DANGER_RGB;
-        const baseAlpha = levelRef.current === 'CALM' ? 0.16 : 0.22;
+        // NOTE: bumped up from 0.16/0.22 — reports of the mesh looking
+        // "incomplete" on one side of the canvas. Best guess without a
+        // live browser: the un-distorted base lattice was faint enough
+        // that only the bright, high-heat lines near an active intrusion
+        // point were visible, reading as a gap rather than a dim area.
+        // If it still looks incomplete (not just dim) after this, it's a
+        // real coverage bug, not contrast — worth a screenshot with
+        // threatLevel CALM (no intrusions at all) to isolate which.
+        const baseAlpha = levelRef.current === 'CALM' ? 0.26 : 0.34;
         ctx.strokeStyle = `rgba(${rgb}, ${Math.min(1, baseAlpha + maxHeat * 0.7)})`;
         ctx.lineWidth = maxHeat > 0.55 ? 1.8 : 1;
         ctx.beginPath();
