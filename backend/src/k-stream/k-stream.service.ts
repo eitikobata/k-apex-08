@@ -180,8 +180,8 @@ export class KStreamService implements OnModuleInit {
     summary: string;
     isRogueAi?: boolean;
     rogueAiNodeId?: string;
-  }): Promise<void> {
-    await this.prisma.$transaction(async (tx) => {
+  }): Promise<string> {
+    const incidentId = await this.prisma.$transaction(async (tx) => {
       const incident = await tx.incident.create({
         data: {
           tier: params.tier,
@@ -213,8 +213,50 @@ export class KStreamService implements OnModuleInit {
         eventType: 'INCIDENT_RAISED',
         payload: { incidentId: incident.id, tier: params.tier, kind: params.kind },
       });
+
+      return incident.id;
     });
 
     this.logger.warn(`Incident raised: tier=${params.tier} kind=${params.kind}`);
+    return incidentId;
+  }
+
+  /**
+   * Admin-only testing utility (see KStreamController) — forces an
+   * incident straight into the same pipeline a real detection uses,
+   * instead of waiting on SimulatorService's random ticks (per-tick
+   * chance, which makes manual testing painfully slow at low settings).
+   * Reuses raiseIncident, so everything downstream — K-DIRECTIVE routing,
+   * operator notification, autonomous-mode auto-resolution, Rogue AI
+   * containment — behaves identically to an organic incident. There's no
+   * real RawEvent backing this (contributingEventIds is empty) — it's
+   * clearly labeled as injected in the summary so it's never confused
+   * with a genuine detection in K-BLACKBOX or Blacktape.
+   */
+  async debugInjectIncident(type: 'LATCH' | 'SPLICE' | 'SHATTER' | 'ROGUE_AI'): Promise<{ incidentId: string }> {
+    const isRogueAi = type === 'ROGUE_AI';
+    const tier: 'LATCH' | 'SPLICE' | 'SHATTER' = isRogueAi ? 'SHATTER' : type;
+    const kind = isRogueAi ? 'ROGUE_AI_SIGNATURE' : tier === 'SPLICE' ? 'NODE_SILENCE' : 'PRIVILEGED_ACCESS_ATTEMPT';
+
+    let rogueAiNodeId: string | undefined;
+    if (isRogueAi) {
+      const nodes = await this.prisma.networkNode.findMany();
+      if (nodes.length === 0) {
+        throw new Error('No network nodes seeded yet — the simulator seeds them on first tick, try again shortly');
+      }
+      rogueAiNodeId = nodes[Math.floor(Math.random() * nodes.length)].id;
+    }
+
+    const incidentId = await this.raiseIncident({
+      tier,
+      kind,
+      contributingEventIds: [],
+      summary: `[DEBUG] Manually injected by admin (${type})`,
+      isRogueAi,
+      rogueAiNodeId,
+    });
+
+    this.logger.warn(`[DEBUG] Incident manually injected: type=${type} id=${incidentId}`);
+    return { incidentId };
   }
 }

@@ -312,6 +312,15 @@ body {
   from { transform: translateY(0); }
   to { transform: translateY(-50%); }
 }
+.bg-col-alert {
+  color: rgba(232, 63, 107, 0.75);
+  font-size: 28px;
+  font-family: var(--font-rajdhani), sans-serif;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  line-height: 1.6;
+  text-shadow: 0 0 12px rgba(232, 63, 107, 0.6);
+}
 
 /* --- Occasional glitch artifacts -----------------------------------------
    Two layers, different durations/delays so they never sync up — reads as
@@ -340,4 +349,19 @@ body {
   0%, 97.6%, 100% { opacity: 0; transform: translateX(0); clip-path: inset(100% 0 0 0); }
   97.7% { opacity: 0.4; transform: translateX(6px); clip-path: inset(65% 0 10% 0); background: linear-gradient(90deg, rgba(63,208,232,0.4), rgba(226,28,56,0.5)); }
   97.85% { opacity: 0; }
+}
+
+/* --- Rogue AI ambient background pulse -----------------------------------
+   Deliberately behind everything (see the z-index -1 div in console/page.tsx)
+   — a slow red breathing wash across the whole viewport, visible only in
+   the gaps between panels and through BackgroundColumns' scrolling text,
+   never over panel content itself (panels are opaque). Meant to be felt at
+   the edges of vision, not stared at.
+--------------------------------------------------------------------------- */
+.rogue-bg-pulse {
+  animation: rogue-bg-pulse 1.6s ease-in-out infinite;
+}
+@keyframes rogue-bg-pulse {
+  0%, 100% { background: rgba(232, 63, 107, 0.06); }
+  50% { background: rgba(232, 63, 107, 0.24); }
 }

@@ -240,6 +240,16 @@ export const kStreamApi = {
     request<IncidentSummaryDto[]>('/k-stream/incidents', {
       headers: authHeaders(accessToken),
     }),
+
+  // Real endpoint (KStreamController) — admin-only, forces an incident
+  // through the same pipeline a real detection uses. Testing utility, not
+  // exposed to non-admin roles server-side either.
+  debugInject: (accessToken: string, type: 'LATCH' | 'SPLICE' | 'SHATTER' | 'ROGUE_AI') =>
+    request<{ incidentId: string }>('/k-stream/debug/inject', {
+      method: 'POST',
+      headers: authHeaders(accessToken),
+      body: JSON.stringify({ type }),
+    }),
 };
 
 // --- K-SILENCE --------------------------------------------------------------

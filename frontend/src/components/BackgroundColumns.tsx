@@ -1,6 +1,9 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useThreatStore } from '@/lib/threat-store';
+
+const ALERT_LINES = Array.from({ length: 30 }, () => 'ALERT!');
 
 const COL1 = [
   'Node telemetry baseline recalibrated.',
@@ -48,11 +51,19 @@ function randomBinary(): string {
   return `${part()} ${part()} ${part()} ${part()}`;
 }
 
-function Column({ lines, durationSec }: { lines: string[]; durationSec: number }) {
+function Column({
+  lines,
+  durationSec,
+  alert = false,
+}: {
+  lines: string[];
+  durationSec: number;
+  alert?: boolean;
+}) {
   // Duplicated once — this is what lets translateY(-50%) loop with no seam.
   const content = [...lines, ...lines].join('\n');
   return (
-    <div className="bg-col">
+    <div className={`bg-col ${alert ? 'bg-col-alert' : ''}`}>
       <div className="bg-col-inner" style={{ ['--bg-scroll-duration' as string]: `${durationSec}s` }}>
         {content}
       </div>
@@ -69,18 +80,23 @@ function Column({ lines, durationSec }: { lines: string[]; durationSec: number }
 export function BackgroundColumns() {
   const [hexLines, setHexLines] = useState<string[]>([]);
   const [binLines, setBinLines] = useState<string[]>([]);
+  const alert = useThreatStore((s) => s.rogueAiActive);
 
   useEffect(() => {
     setHexLines(Array.from({ length: 26 }, randomHex));
     setBinLines(Array.from({ length: 26 }, randomBinary));
   }, []);
 
+  // During an active Rogue AI incident, all four columns switch to the
+  // same thing — big, red, repeated "ALERT!" — instead of their normal
+  // content. Thematic escalation of the same ambient layer rather than a
+  // separate effect: the thing that's always quietly there gets loud.
   return (
     <div className="bg-columns" aria-hidden="true">
-      <Column lines={COL1} durationSec={42} />
-      <Column lines={COL2} durationSec={58} />
-      <Column lines={hexLines} durationSec={34} />
-      <Column lines={binLines} durationSec={49} />
+      <Column lines={alert ? ALERT_LINES : COL1} durationSec={alert ? 14 : 42} alert={alert} />
+      <Column lines={alert ? ALERT_LINES : COL2} durationSec={alert ? 16 : 58} alert={alert} />
+      <Column lines={alert ? ALERT_LINES : hexLines} durationSec={alert ? 13 : 34} alert={alert} />
+      <Column lines={alert ? ALERT_LINES : binLines} durationSec={alert ? 15 : 49} alert={alert} />
     </div>
   );
 }

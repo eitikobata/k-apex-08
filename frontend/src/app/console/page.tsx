@@ -20,6 +20,7 @@ import { RogueAiPanel, RogueAiActive } from '@/components/RogueAiPanel';
 import { BlackboxPanel } from '@/components/BlackboxPanel';
 import { ReplayPanel } from '@/components/ReplayPanel';
 import { AuditLogPanel } from '@/components/AuditLogPanel';
+import { useThreatStore } from '@/lib/threat-store';
 
 // xterm.js references `self` at module-eval time, which doesn't exist
 // during Next's server-side render — must be client-only.
@@ -79,6 +80,14 @@ export default function ConsolePage() {
   // scoped by construction — see honesty flags in IncidentsPanel/RogueAiPanel.
   const [incidents, setIncidents] = useState<IncidentRecord[]>([]);
   const [rogueAiActive, setRogueAiActive] = useState<RogueAiActive | null>(null);
+
+  // Mirrors rogueAiActive into the shared threat store so BackgroundColumns
+  // (mounted in layout.tsx, outside this component's tree) can switch into
+  // ALERT mode. Deliberately just an effect watching existing state rather
+  // than touching the 4 call sites that already set rogueAiActive below.
+  useEffect(() => {
+    useThreatStore.getState().setRogueAiActive(!!rogueAiActive);
+  }, [rogueAiActive]);
 
   useEffect(() => {
     hydrate();
@@ -354,18 +363,31 @@ export default function ConsolePage() {
 
   return (
     <>
+      {/* Ambient background, not a foreground element — sits at z-index -1
+          (same layer as BackgroundColumns in layout.tsx, and rendered after
+          it in DOM order so it stacks on top of it, both still behind every
+          normal-flow panel). pointer-events-none: it's a mood layer, never
+          intercepts a click. */}
+      {rogueAiActive && <div className="fixed inset-0 z-[-1] pointer-events-none rogue-bg-pulse" aria-hidden="true" />}
+
       {/* Real blocking lockdown — everything behind stops responding to
           clicks (pointer-events-none on the wrapper below); "Stand down"
           lives inside the overlay itself as the one way out. */}
       {isAutonomous && <LockdownOverlay onStandDown={toggleAutonomous} busy={autonomousBusy} />}
 
       {/* Rogue AI auto-opens — this is the point of the mechanic, an
-          operator shouldn't have to go looking for it. Not dismissible by
-          backdrop click on purpose; it clears itself via ROGUE_AI_TRANSITION /
+          operator shouldn't have to go looking for it. NOTE (bugfix): this
+          used to be a full-screen backdrop (bg-void/85 covering everything)
+          — it looked dramatic but silently ate every click and keystroke
+          behind it, including the terminal the operator actually needs to
+          type the response into. No backdrop now: a floating panel pinned
+          near the top, everything else (terminal included) stays fully
+          interactive underneath. Not dismissible by clicking elsewhere on
+          purpose — it clears itself via ROGUE_AI_TRANSITION /
           ROGUE_AI_RESOLVED_AUTONOMOUSLY (see the socket effect above). */}
       {rogueAiActive && (
-        <div className="fixed inset-0 z-[555] bg-void/85 flex items-center justify-center">
-          <div className="panel-border bg-panel w-full max-w-2xl border-2 border-danger">
+        <div className="fixed top-16 left-1/2 -translate-x-1/2 z-[555] w-full max-w-2xl px-3 pointer-events-none">
+          <div className="panel-border bg-panel border-2 border-danger shadow-[0_0_50px_rgba(232,63,107,0.5)] pointer-events-auto">
             <div className="border-b-2 border-danger px-3 py-2">
               <span className="font-display text-xs tracking-[0.2em] text-danger uppercase">
                 [ Rogue AI containment ]
@@ -433,10 +455,10 @@ export default function ConsolePage() {
           ))}
         </nav>
 
-        <main className="flex-1 min-h-0 p-3 overflow-y-auto">
+        <main className="flex-1 min-h-0 p-8 overflow-y-auto">
           {view === 'OVERVIEW' && (
-            <div className="min-h-full flex flex-col gap-3">
-              <div className="grid grid-cols-[260px_1fr_300px_260px] gap-3 h-56 shrink-0">
+            <div className="min-h-full flex flex-col gap-5">
+              <div className="grid grid-cols-[260px_1fr_300px_260px] gap-5 h-56 shrink-0">
                 <Panel title="System state">
                   <div className="p-3 flex flex-col gap-3 text-xs">
                     <Row label="Autonomous mode" value={isAutonomous ? 'ACTIVE' : 'STANDBY'} />
@@ -480,7 +502,7 @@ export default function ConsolePage() {
                 </Panel>
               </div>
 
-              <div className="grid grid-cols-[260px_1fr_300px_260px] gap-3 h-56 shrink-0">
+              <div className="grid grid-cols-[260px_1fr_300px_260px] gap-5 h-56 shrink-0">
                 <div className="col-span-2 min-h-0">
                   <Panel title="Incidents" className="h-full">
                     <div className="p-3 h-full">
