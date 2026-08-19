@@ -113,30 +113,47 @@ export function Blackwall({ threatLevel }: { threatLevel: ThreatLevel }) {
     }
 
     function drawLineFamily(w: number, h: number, now: number, slope: 1 | -1) {
-      // slope +1: lines where (y - x) is constant. slope -1: (y + x) constant.
-      const span = slope === 1 ? h + w : w + h;
-      const cOffset = slope === 1 ? -h : 0;
-      for (let c = cOffset; c <= span + cOffset; c += CELL) {
+      // slope +1: lines where (y - x) is constant, i.e. y = x + c.
+      // slope -1: lines where (y + x) is constant, i.e. y = c - x.
+      // NOTE (bugfix): the old version sampled x from -CELL to w+CELL for
+      // EVERY line and threw away any sample landing outside [0,h] — for a
+      // wide, short panel (Perimeter Defense is ~6:1) that meant most
+      // samples for most lines got discarded, and however many survived
+      // depended on slope in an asymmetric way (a 45° line's visible
+      // portion is capped at roughly `h` long regardless of `w`, so wide
+      // canvases waste most of the sampling range). Net effect: one
+      // diagonal family ended up visibly sparser than the other instead
+      // of a symmetric crosshatch. Fixed by computing each line's exact
+      // clipped x-range against the rectangle up front (simple 45°
+      // line/box clipping) and only ever sampling within that — every
+      // line that intersects the canvas draws its full length, evenly,
+      // regardless of aspect ratio or which family it belongs to.
+      const span = w + h;
+      for (let c = slope === 1 ? -w : 0; c <= (slope === 1 ? h : span); c += CELL) {
+        const xStart = Math.max(0, slope === 1 ? -c : c - h);
+        const xEnd = Math.min(w, slope === 1 ? h - c : c);
+        if (xEnd - xStart < 1) continue;
+
         const points: { x: number; y: number; heat: number }[] = [];
         let maxHeat = 0;
-        for (let x = -CELL; x <= w + CELL; x += SAMPLE_STEP) {
+        for (let x = xStart; x <= xEnd; x += SAMPLE_STEP) {
           const y = slope === 1 ? x + c : c - x;
-          if (y < -CELL || y > h + CELL) continue;
           const { dx, dy, heat } = displacement(x, y, now);
           maxHeat = Math.max(maxHeat, heat);
           points.push({ x: x + dx, y: y + dy, heat });
         }
+        // Always include the exact endpoint — SAMPLE_STEP rarely divides
+        // (xEnd - xStart) evenly, so without this every line falls a
+        // little short of the edge it's supposed to touch.
+        if (points.length === 0 || points[points.length - 1].x < xEnd) {
+          const y = slope === 1 ? xEnd + c : c - xEnd;
+          const { dx, dy, heat } = displacement(xEnd, y, now);
+          maxHeat = Math.max(maxHeat, heat);
+          points.push({ x: xEnd + dx, y: y + dy, heat });
+        }
         if (points.length < 2) continue;
 
         const rgb = maxHeat > 0.55 ? HOT_RGB : maxHeat > 0.15 ? SIGNAL_RGB : DANGER_RGB;
-        // NOTE: bumped up from 0.16/0.22 — reports of the mesh looking
-        // "incomplete" on one side of the canvas. Best guess without a
-        // live browser: the un-distorted base lattice was faint enough
-        // that only the bright, high-heat lines near an active intrusion
-        // point were visible, reading as a gap rather than a dim area.
-        // If it still looks incomplete (not just dim) after this, it's a
-        // real coverage bug, not contrast — worth a screenshot with
-        // threatLevel CALM (no intrusions at all) to isolate which.
         const baseAlpha = levelRef.current === 'CALM' ? 0.26 : 0.34;
         ctx.strokeStyle = `rgba(${rgb}, ${Math.min(1, baseAlpha + maxHeat * 0.7)})`;
         ctx.lineWidth = maxHeat > 0.55 ? 1.8 : 1;

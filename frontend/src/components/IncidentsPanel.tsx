@@ -16,7 +16,7 @@ export interface IncidentRecord {
 // console/page.tsx). Kept internal, never shown to the operator — see
 // SHOW_AI_ODDS below.
 const AI_RESOLVE_ODDS: Partial<Record<IncidentRecord['tier'], number>> = {
-  LATCH: 0.6,
+  LATCH: 0.8,
   SPLICE: 0.15,
   // SHATTER deliberately has no entry — no AI-resolve option at all, the
   // escalation in severity means fewer safety nets, not just more typing.
@@ -56,7 +56,18 @@ export function IncidentsPanel({
   onOpenCase: (incidentId: string) => void;
   onAiResolved: (incidentId: string) => void;
 }) {
-  const sorted = [...incidents].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  // Pending (needs a response) always sorts above resolved/escalated,
+  // regardless of when either happened — an old unresolved incident should
+  // never get buried under a freshly-resolved one. Within "pending",
+  // oldest first (arrival order — first come, first handled). Within
+  // "done", most recently touched first (most useful for a quick
+  // "what just wrapped up" glance).
+  const sorted = [...incidents].sort((a, b) => {
+    const aPending = a.status === 'AWAITING_OPERATOR' || a.status === 'ROGUE_AI_ACTIVE';
+    const bPending = b.status === 'AWAITING_OPERATOR' || b.status === 'ROGUE_AI_ACTIVE';
+    if (aPending !== bPending) return aPending ? -1 : 1;
+    return aPending ? a.createdAt.localeCompare(b.createdAt) : b.updatedAt.localeCompare(a.updatedAt);
+  });
 
   return (
     <div className="flex-1 min-h-0 flex flex-col text-xs">

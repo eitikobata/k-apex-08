@@ -467,7 +467,7 @@ export default function ConsolePage() {
           onOpenNotes={() => setNotesOpen(true)}
         />
 
-        <nav className="relative flex gap-2 px-3 pt-3 shrink-0 text-[10px]">
+        <nav className="relative flex gap-2 px-3 pt-2 shrink-0 text-[10px]">
           {(
             [
               ['OVERVIEW', 'Overview'],
@@ -508,11 +508,11 @@ export default function ConsolePage() {
           )}
         </nav>
 
-        <main className="relative flex-1 min-h-0 p-8 overflow-y-auto">
+        <main className="relative flex-1 min-h-0 p-6 overflow-y-auto">
           {view === 'OVERVIEW' && (
-            <div className="min-h-full flex flex-col gap-5">
-              <div className="grid grid-cols-[260px_1fr_300px_260px] gap-5 h-56 shrink-0">
-                <Panel title="System state">
+            <div className="min-h-full flex flex-col gap-4">
+              <div className="grid grid-cols-[260px_1fr_300px_260px] gap-4 h-56 shrink-0">
+                <Panel title="K-DEAD">
                   <div className="p-3 flex flex-col gap-3 text-xs">
                     <Row label="Autonomous mode" value={isAutonomous ? 'ACTIVE' : 'STANDBY'} />
                     <Row label="Origin" value={systemState?.activatedOrigin ?? '—'} />
@@ -532,11 +532,11 @@ export default function ConsolePage() {
                   </div>
                 </Panel>
 
-                <Panel title="Perimeter defense">
+                <Panel title="DEAD WALL">
                   <Blackwall threatLevel={threatLevel} />
                 </Panel>
 
-                <Panel title="Signal feed">
+                <Panel title="Subspace K-Stream">
                   <div
                     ref={feedContainerRef}
                     className="p-3 flex flex-col gap-1 text-xs overflow-y-auto h-full font-mono"
@@ -555,16 +555,16 @@ export default function ConsolePage() {
                 </Panel>
               </div>
 
-              <div className="grid grid-cols-[260px_1fr_300px_260px] gap-5 h-64 shrink-0">
+              <div className="grid grid-cols-[260px_1fr_300px_260px] gap-4 h-64 shrink-0">
                 <div className="col-span-2 min-h-0">
-                  <Panel title="Incidents" className="h-full">
+                  <Panel title="K-Disturbances" className="h-full">
                     <div className="h-full flex flex-col p-3">
                       <IncidentsPanel incidents={incidents} onCopyToTerminal={copyToTerminal} onOpenCase={openCase} onAiResolved={handleAiResolved} />
                     </div>
                   </Panel>
                 </div>
                 <div className="col-span-2 min-h-0">
-                  <Panel title="K-SILENCE — node status" className="h-full">
+                  <Panel title="K-SILENCE" className="h-full">
                     <div className="p-3 h-full">
                       <NodeGrid accessToken={session.accessToken} />
                     </div>
@@ -572,7 +572,7 @@ export default function ConsolePage() {
                 </div>
               </div>
 
-              <Panel title="Command terminal" className="h-72 shrink-0">
+              <Panel title="K-COMMAND" className="h-56 shrink-0">
                 <ConsoleTerminal socket={socket} insertRequest={terminalInsert} />
               </Panel>
             </div>
