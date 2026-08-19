@@ -14,7 +14,10 @@ const CONSUMER_NAME = 'k-stream-worker-1';
 const POLL_INTERVAL_MS = 1000;
 const READ_COUNT = 50;
 
-const GENERIC_CORRELATION: CorrelationConfig = { windowMs: 60_000, threshold: 4 };
+// NOTE: threshold bumped 4->5 alongside the flaky-node noise rate coming
+// down (see SimulatorService's seedNodes) — the two changes work together,
+// don't tune just one in isolation or you're back to constant LATCH spam.
+const GENERIC_CORRELATION: CorrelationConfig = { windowMs: 60_000, threshold: 5 };
 const ROGUE_AI_MIN_SAMPLES = 3;
 
 interface NodeWindowState {

@@ -17,7 +17,7 @@ const HEARTBEAT_MISS_CHANCE = 0.03;
 // here as a middle ground. The debug injection endpoint (KStreamController,
 // admin-only) remains the right tool for "I need an incident right now" —
 // these odds are just for ambient background activity.
-const MULTI_STAGE_CHANCE = 0.08;
+const MULTI_STAGE_CHANCE = 0.05;
 const ROGUE_AI_CHANCE = 0.025;
 
 /**
@@ -59,7 +59,17 @@ export class SimulatorService implements OnModuleInit {
       return {
         codeName: `NODE-${String(i + 1).padStart(2, '0')}`,
         sector,
-        baselineNoiseRate: isChronicallyFlaky ? 0.4 : 0.08,
+        // NOTE: chronically flaky nodes were at 0.4 — with the correlator's
+        // threshold at 4 events per 60s window (GENERIC_CORRELATION in
+        // k-stream.service.ts), a 0.4 rate averages ~4.8 events/60s on its
+        // own, meaning flaky nodes were raising a fresh LATCH incident in
+        // almost every single rolling window, nonstop, independent of
+        // MULTI_STAGE_CHANCE below. That's what was actually flooding
+        // Incidents — not the deliberate attack sequences. Dropped to 0.12
+        // (still noisier than normal nodes, so the "some nodes you learn
+        // to distrust" idea from the brief survives) — see the threshold
+        // bump alongside this for the other half of the fix.
+        baselineNoiseRate: isChronicallyFlaky ? 0.12 : 0.08,
         severityBias: isChronicallyFlaky ? 0.05 : 0.15,
         isChronicallyFlaky,
         lastHeartbeatAt: new Date(),
