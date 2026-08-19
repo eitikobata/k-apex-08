@@ -77,7 +77,22 @@ function Column({
 // classic hydration mismatch. useEffect only ever runs client-side, after
 // hydration completes, so the random content is generated once, safely,
 // after React has already reconciled a matching (empty) first paint.
-export function BackgroundColumns() {
+//
+// NOTE (scoped variant): `.bg-columns` is `position:fixed; z-index:-1` —
+// correct in theory (negative z-index always paints behind normal-flow
+// content) but after repeated reports that it's invisible specifically on
+// the console page and not elsewhere, and no way to check a real browser
+// from here, `scoped` sidesteps the theory entirely instead of trying to
+// out-guess it a fourth time. When true, this renders as a plain
+// `position:absolute inset-0 z-0` FIRST CHILD of a `position:relative`
+// parent — a single, local stacking context with no dependency on
+// cross-page layout, global CSS, or how any other fixed/negative-z layer
+// on the page behaves. Normal-flow siblings rendered after it in the DOM
+// (the console's panels) paint on top by plain DOM order, no z-index
+// theory required. If it's STILL invisible after this, the bug isn't
+// stacking-related at all — worth checking with DevTools whether the
+// element exists and has non-zero size (see console/page.tsx).
+export function BackgroundColumns({ scoped = false }: { scoped?: boolean } = {}) {
   const [hexLines, setHexLines] = useState<string[]>([]);
   const [binLines, setBinLines] = useState<string[]>([]);
   const alert = useThreatStore((s) => s.rogueAiActive);
@@ -92,7 +107,11 @@ export function BackgroundColumns() {
   // content. Thematic escalation of the same ambient layer rather than a
   // separate effect: the thing that's always quietly there gets loud.
   return (
-    <div className="bg-columns" aria-hidden="true">
+    <div
+      className="bg-columns"
+      style={scoped ? { position: 'absolute', zIndex: 0 } : undefined}
+      aria-hidden="true"
+    >
       <Column lines={alert ? ALERT_LINES : COL1} durationSec={alert ? 14 : 42} alert={alert} />
       <Column lines={alert ? ALERT_LINES : COL2} durationSec={alert ? 16 : 58} alert={alert} />
       <Column lines={alert ? ALERT_LINES : hexLines} durationSec={alert ? 13 : 34} alert={alert} />

@@ -16,7 +16,7 @@ export function TopBar({
   onOpenNotes: () => void;
 }) {
   return (
-    <header className="flex items-center justify-between px-3 py-2.5 border-b-2 border-danger shrink-0">
+    <header className="relative flex items-center justify-between px-3 py-2.5 border-b-2 border-danger shrink-0">
       <div className="font-display text-sm tracking-[0.25em] text-danger uppercase">
         K-APEX-08 <span className="text-ash font-medium">{'//'} Kobata Matrix Corporation</span>
       </div>

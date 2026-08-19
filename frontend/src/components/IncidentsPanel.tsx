@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 export interface IncidentRecord {
   id: string;
@@ -26,6 +26,27 @@ const AI_RESOLVE_ODDS: Partial<Record<IncidentRecord['tier'], number>> = {
   // SHATTER deliberately has no entry — no AI-resolve option at all, the
   // escalation in severity means fewer safety nets, not just more typing.
 };
+
+// NOTE (honesty flag): this mirrors the visual language of Rogue AI's
+// countdown (RogueAiPanel), but unlike Rogue AI's stepDeadlineAt, there is
+// NO backend deadline for regular KURO-ICE confirmations — Incident has no
+// deadline column, and nothing sweeps for expiry the way rogue-ai.service.ts
+// does. This is purely a visual "time budget" computed client-side from
+// createdAt, with NO consequence when it hits zero (no escalation, no
+// auto-resolve, it just sits at 0:00). Adding a real one needs a schema
+// migration (a new column + a sweep interval like Rogue AI's) — flagging
+// this now rather than pretending it's enforced.
+const TIER_TIMER_MS: Record<IncidentRecord['tier'], number> = {
+  LATCH: 90_000,
+  SPLICE: 60_000,
+  SHATTER: 30_000,
+};
+
+// Set to false to hide the inline "type X then click" hint per row — keep
+// it on while testing, turn it off once the Instructions panel alone is
+// enough to teach the flow (matches the request: useful training wheels
+// now, noise later).
+const SHOW_INLINE_HINTS = true;
 
 // NOTE (design decision, no modal anymore): every action lives directly in
 // the row. Difficulty scales by tier through how much the operator has to
@@ -82,8 +103,15 @@ function IncidentRow({
   onOpenCase: (incidentId: string) => void;
 }) {
   const [aiState, setAiState] = useState<'idle' | 'trying' | 'succeeded' | 'failed'>('idle');
+  const [now, setNow] = useState(() => Date.now());
   const aiOdds = AI_RESOLVE_ODDS[incident.tier];
   const actionable = incident.status === 'AWAITING_OPERATOR';
+
+  useEffect(() => {
+    if (!actionable) return;
+    const interval = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(interval);
+  }, [actionable]);
 
   function tryAiResolve() {
     if (aiOdds === undefined || aiState === 'trying') return;
@@ -98,6 +126,11 @@ function IncidentRow({
     }, 1600 + Math.random() * 900);
   }
 
+  const windowMs = TIER_TIMER_MS[incident.tier];
+  const elapsedMs = now - new Date(incident.createdAt).getTime();
+  const remainingMs = Math.max(0, windowMs - elapsedMs);
+  const pct = Math.round((remainingMs / windowMs) * 100);
+
   return (
     <div
       className={`flex flex-col gap-1.5 px-1 py-2 border-b border-grid ${
@@ -109,6 +142,15 @@ function IncidentRow({
         <span className="text-ash font-mono truncate flex-1">#{incident.id}</span>
         <StatusLabel status={incident.status} />
       </div>
+
+      {actionable && (
+        <div className="h-1 bg-grid">
+          <div
+            className={`h-full transition-[width] ${pct < 20 ? 'bg-danger' : pct < 50 ? 'bg-warn' : 'bg-ash'}`}
+            style={{ width: `${pct}%` }}
+          />
+        </div>
+      )}
 
       {actionable && (
         <div className="flex items-center gap-2 flex-wrap">
@@ -124,10 +166,12 @@ function IncidentRow({
           >
             {incident.tier}
           </button>
-          <span className="text-ash text-[10px]">
-            type <span className="text-ash-bright">{`CONFIRM${incident.tier === 'LATCH' ? '' : ` ${incident.tier}`} `}</span>
-            first, then click
-          </span>
+          {SHOW_INLINE_HINTS && (
+            <span className="text-ash text-[10px]">
+              type <span className="text-ash-bright">{`CONFIRM${incident.tier === 'LATCH' ? '' : ` ${incident.tier}`} `}</span>
+              first, then click
+            </span>
+          )}
 
           {aiOdds !== undefined && aiState === 'idle' && (
             <button

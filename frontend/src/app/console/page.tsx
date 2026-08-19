@@ -20,6 +20,7 @@ import { BlackboxPanel } from '@/components/BlackboxPanel';
 import { ReplayPanel } from '@/components/ReplayPanel';
 import { AuditLogPanel } from '@/components/AuditLogPanel';
 import { useThreatStore } from '@/lib/threat-store';
+import { BackgroundColumns } from '@/components/BackgroundColumns';
 
 // xterm.js references `self` at module-eval time, which doesn't exist
 // during Next's server-side render — must be client-only.
@@ -443,8 +444,15 @@ export default function ConsolePage() {
       )}
 
       <div
-        className={`h-screen w-screen flex flex-col ${isAutonomous ? 'mode-autonomous pointer-events-none' : 'mode-operator'}`}
+        className={`relative h-screen w-screen flex flex-col ${isAutonomous ? 'mode-autonomous pointer-events-none' : 'mode-operator'}`}
       >
+        {/* Scoped ambient background — see the long note in
+            BackgroundColumns.tsx. First child + position:relative parent +
+            position:absolute z-0 self, with every panel below rendered
+            after it in plain DOM order — guaranteed to paint underneath,
+            no cross-page or negative-z-index stacking theory required. */}
+        <BackgroundColumns scoped />
+
         <TopBar
           connected={connected}
           isAutonomous={isAutonomous}
@@ -453,7 +461,7 @@ export default function ConsolePage() {
           onOpenNotes={() => setNotesOpen(true)}
         />
 
-        <nav className="flex gap-2 px-3 pt-3 shrink-0 text-[10px]">
+        <nav className="relative flex gap-2 px-3 pt-3 shrink-0 text-[10px]">
           {(
             [
               ['OVERVIEW', 'Overview'],
@@ -494,7 +502,7 @@ export default function ConsolePage() {
           )}
         </nav>
 
-        <main className="flex-1 min-h-0 p-8 overflow-y-auto">
+        <main className="relative flex-1 min-h-0 p-8 overflow-y-auto">
           {view === 'OVERVIEW' && (
             <div className="min-h-full flex flex-col gap-5">
               <div className="grid grid-cols-[260px_1fr_300px_260px] gap-5 h-56 shrink-0">
