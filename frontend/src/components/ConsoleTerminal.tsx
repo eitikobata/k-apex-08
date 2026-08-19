@@ -9,7 +9,28 @@ import { sendRawCommand } from '@/lib/socket-client';
 
 const PROMPT = '\r\n\x1b[38;2;0;0;0m\x1b[48;2;63;208;232m K-APEX-08> \x1b[0m ';
 
-export function ConsoleTerminal({ socket }: { socket: Socket | null }) {
+export interface TerminalInsertRequest {
+  token: number;
+  text: string;
+}
+
+export function ConsoleTerminal({
+  socket,
+  insertRequest,
+}: {
+  socket: Socket | null;
+  /**
+   * Props-based instead of an imperative ref: this component is loaded via
+   * next/dynamic (xterm touches `self`, which doesn't exist during SSR —
+   * see the dynamic() call in console/page.tsx), and while modern Next
+   * does forward refs through dynamic() it's one more moving part to get
+   * wrong for something untested in a real browser yet. A bumped `token`
+   * with each request is simpler to reason about and impossible to get
+   * subtly wrong: same text twice still triggers, because the token
+   * (not the text) is what the effect below watches.
+   */
+  insertRequest?: TerminalInsertRequest | null;
+}) {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<XTerm | null>(null);
   const lineBufferRef = useRef('');
@@ -122,20 +143,28 @@ export function ConsoleTerminal({ socket }: { socket: Socket | null }) {
     };
   }, [socket]);
 
-  // NOTE (layout): the terminal *panel* is tall on purpose (flex-1, glued
-  // to the page bottom — see console/page.tsx). xterm itself, though, is a
-  // real terminal emulator: it fills its container top-down like any shell
-  // and only starts scrolling once the buffer exceeds the visible rows. On
-  // a tall, mostly-empty container that meant a handful of commands sat
-  // near the top with a wall of blank space below — technically correct,
-  // reads as broken. Fix: give xterm a fixed, modest height (enough rows
-  // to feel like a terminal) and let flexbox (`justify-end` on the outer
-  // wrapper) pin that block to the bottom of the tall panel. Once enough
-  // lines accumulate to fill that fixed height, xterm's own scrollback
-  // takes over exactly like a normal terminal.
-  return (
-    <div className="h-full flex flex-col justify-end">
-      <div ref={containerRef} className="terminal-shell" style={{ height: 260 }} />
-    </div>
-  );
+  // Copy-to-terminal: incidents/Rogue AI panels show a full ID + button
+  // instead of a one-click "run this for me" action — the point is that
+  // the operator still has to type the verb (CONFIRM SPLICE, ISOLATE,
+  // etc.), only the long UUID is paste-assisted. This just appends
+  // whatever text arrives to both the visible terminal and the same
+  // buffer onData() below builds up — from xterm's perspective it's
+  // indistinguishable from having been typed.
+  useEffect(() => {
+    if (!insertRequest || !termRef.current) return;
+    lineBufferRef.current += insertRequest.text;
+    termRef.current.write(insertRequest.text);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [insertRequest?.token]);
+
+  // NOTE (bugfix): the previous fix pinned xterm to the bottom of its
+  // panel using a fixed inline height (260px) — reasonable while the panel
+  // itself was flex-1 and unpredictably tall, but now that the panel has a
+  // fixed height (h-72, see console/page.tsx) that hardcoded 260px could
+  // exceed the panel's actual content area (height minus the title bar),
+  // clipping the terminal into its own header. Simplest fix: let it fill
+  // 100% of whatever Panel gives it, same as originally — Panel's own
+  // `flex-1 min-h-0` on the content wrapper already sizes this correctly,
+  // no manual pixel math to get wrong.
+  return <div ref={containerRef} className="terminal-shell" />;
 }

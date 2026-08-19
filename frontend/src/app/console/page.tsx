@@ -68,6 +68,11 @@ export default function ConsolePage() {
   const [notesOpen, setNotesOpen] = useState(false);
   const [replayIncidentId, setReplayIncidentId] = useState<string | null>(null);
   const [confirmIncident, setConfirmIncident] = useState<IncidentRecord | null>(null);
+  const [terminalInsert, setTerminalInsert] = useState<{ token: number; text: string } | null>(null);
+
+  function copyToTerminal(text: string) {
+    setTerminalInsert({ token: Date.now(), text });
+  }
 
   // Incident records and Rogue AI state are both derived, client-side, from
   // the same socket events the signal feed already listens to. Session
@@ -367,7 +372,7 @@ export default function ConsolePage() {
               </span>
             </div>
             <div className="p-4">
-              <RogueAiPanel active={rogueAiActive} socket={socket} />
+              <RogueAiPanel active={rogueAiActive} onCopyToTerminal={copyToTerminal} />
             </div>
           </div>
         </div>
@@ -376,7 +381,7 @@ export default function ConsolePage() {
       {confirmIncident && (
         <IncidentConfirmModal
           incident={confirmIncident}
-          socket={socket}
+          onCopyToTerminal={copyToTerminal}
           onClose={() => setConfirmIncident(null)}
         />
       )}
@@ -479,7 +484,7 @@ export default function ConsolePage() {
                 <div className="col-span-2 min-h-0">
                   <Panel title="Incidents" className="h-full">
                     <div className="p-3 h-full">
-                      <IncidentsPanel incidents={incidents} onRowClick={handleIncidentRowClick} />
+                      <IncidentsPanel incidents={incidents} onRowClick={handleIncidentRowClick} onCopyToTerminal={copyToTerminal} />
                     </div>
                   </Panel>
                 </div>
@@ -493,7 +498,7 @@ export default function ConsolePage() {
               </div>
 
               <Panel title="Command terminal" className="h-72 shrink-0">
-                <ConsoleTerminal socket={socket} />
+                <ConsoleTerminal socket={socket} insertRequest={terminalInsert} />
               </Panel>
             </div>
           )}

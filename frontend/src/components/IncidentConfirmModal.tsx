@@ -1,8 +1,6 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import type { Socket } from 'socket.io-client';
-import { sendNormalizedCommand } from '@/lib/socket-client';
 import type { IncidentRecord } from './IncidentsPanel';
 
 // NOTE (honesty flag): Kind/Node fields from the mockup ("Node silence
@@ -10,17 +8,27 @@ import type { IncidentRecord } from './IncidentsPanel';
 // only carries { incidentId, tier, rogueAi? }. Shown as "—" rather than
 // invented. Detected/elapsed IS real, computed from when this incident was
 // first seen client-side.
+//
+// NOTE (design decision, not just SHATTER anymore): every tier now requires
+// a typed command, not just SHATTER — a one-click "Confirm" button defeated
+// the point of forcing deliberate input. The ID is still copy-assisted
+// (it's a UUID, nobody should have to hand-type that under pressure) but
+// the verb always has to be typed. The raw grammar only recognizes
+// "CONFIRM SPLICE" or "CONFIRM SHATTER" (see terminal-parser.util.ts on
+// the backend) — there's no "CONFIRM LATCH" — so a LATCH-tier incident
+// still shows the SPLICE phrasing; that's a backend grammar quirk, not a
+// frontend guess.
 export function IncidentConfirmModal({
   incident,
-  socket,
+  onCopyToTerminal,
   onClose,
 }: {
   incident: IncidentRecord;
-  socket: Socket | null;
+  onCopyToTerminal: (text: string) => void;
   onClose: () => void;
 }) {
   const [now, setNow] = useState(() => Date.now());
-  const [sent, setSent] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     const interval = setInterval(() => setNow(Date.now()), 1000);
@@ -30,13 +38,8 @@ export function IncidentConfirmModal({
   const elapsedMs = now - new Date(incident.createdAt).getTime();
   const elapsed = formatElapsed(elapsedMs);
   const isShatter = incident.tier === 'SHATTER';
+  const verb = isShatter ? 'SHATTER' : 'SPLICE';
   const tint = isShatter ? 'border-danger' : incident.tier === 'SPLICE' ? 'border-warn' : 'border-signal';
-
-  function confirm() {
-    if (!socket) return;
-    sendNormalizedCommand(socket, { type: 'CONFIRM_KURO_ICE_ACTION', incidentId: incident.id });
-    setSent(true);
-  }
 
   return (
     <div className="fixed inset-0 z-[560] bg-void/80 flex items-center justify-center" onClick={onClose}>
@@ -56,26 +59,32 @@ export function IncidentConfirmModal({
           <Row label="Detected" value={`${elapsed} ago`} />
           <Row label="Status" value={incident.status.replace(/_/g, ' ')} />
 
-          {sent && <p className="text-signal">Command sent — check the terminal / signal feed for confirmation.</p>}
+          <div className="bg-void border border-grid p-3 font-mono text-signal">
+            The terminal only appends — type the verb first, then use the button below to drop the ID
+            in after it.
+            <br />
+            <span className="bg-white/5 px-1">{`CONFIRM ${verb} //${incident.id}`}</span>
+          </div>
 
-          {!sent && !isShatter && (
-            <button
-              onClick={confirm}
-              disabled={!socket}
-              className="border border-warn text-warn font-display tracking-widest uppercase text-[10px] py-2 hover:bg-warn hover:text-void transition-colors disabled:opacity-40"
-            >
-              Confirm {incident.tier} response
-            </button>
-          )}
+          <ol className="text-ash list-decimal list-inside space-y-1">
+            <li>
+              In the terminal, type <span className="text-signal">{`CONFIRM ${verb} `}</span>(with the trailing
+              space)
+            </li>
+            <li>Click below to append the ID</li>
+            <li>Press Enter</li>
+          </ol>
 
-          {!sent && isShatter && (
-            <div className="bg-void border border-grid p-3 font-mono text-signal">
-              High-severity confirmation requires a typed command — no button.
-              <br />
-              Type in the terminal:{' '}
-              <span className="bg-white/5 px-1">{`CONFIRM SHATTER //${incident.id}`}</span>
-            </div>
-          )}
+          <button
+            onClick={() => {
+              onCopyToTerminal(`//${incident.id}`);
+              setCopied(true);
+            }}
+            className="border border-signal text-signal font-display tracking-widest uppercase text-[10px] py-2 hover:bg-signal hover:text-void transition-colors"
+          >
+            Append ID to terminal
+          </button>
+          {copied && <p className="text-ash">ID appended — press Enter in the terminal to send.</p>}
         </div>
       </div>
     </div>

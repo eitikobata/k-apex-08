@@ -26,9 +26,11 @@ export interface IncidentRecord {
 export function IncidentsPanel({
   incidents,
   onRowClick,
+  onCopyToTerminal,
 }: {
   incidents: IncidentRecord[];
   onRowClick: (incident: IncidentRecord) => void;
+  onCopyToTerminal: (text: string) => void;
 }) {
   const active = incidents.filter((i) => !i.deprioritized);
   const deprioritized = incidents.filter((i) => i.deprioritized);
@@ -39,7 +41,7 @@ export function IncidentsPanel({
       <div className="flex-1 min-h-0 overflow-y-auto flex flex-col">
         {sorted.length === 0 && <span className="text-ash">No incidents this session.</span>}
         {sorted.map((inc) => (
-          <IncidentRow key={inc.id} incident={inc} onClick={() => onRowClick(inc)} />
+          <IncidentRow key={inc.id} incident={inc} onClick={() => onRowClick(inc)} onCopyToTerminal={onCopyToTerminal} />
         ))}
       </div>
 
@@ -50,7 +52,7 @@ export function IncidentsPanel({
           </div>
           {deprioritized.map((inc) => (
             <div key={inc.id} className="scale-95 origin-left">
-              <IncidentRow incident={inc} onClick={() => onRowClick(inc)} />
+              <IncidentRow incident={inc} onClick={() => onRowClick(inc)} onCopyToTerminal={onCopyToTerminal} />
             </div>
           ))}
         </div>
@@ -59,18 +61,37 @@ export function IncidentsPanel({
   );
 }
 
-function IncidentRow({ incident, onClick }: { incident: IncidentRecord; onClick: () => void }) {
+function IncidentRow({
+  incident,
+  onClick,
+  onCopyToTerminal,
+}: {
+  incident: IncidentRecord;
+  onClick: () => void;
+  onCopyToTerminal: (text: string) => void;
+}) {
   return (
-    <button
-      onClick={onClick}
-      className={`grid grid-cols-[70px_1fr_130px] gap-2 items-center px-1 py-2 border-b border-grid text-left hover:bg-grid/30 transition-colors ${
+    <div
+      className={`flex items-center gap-2 px-1 py-2 border-b border-grid hover:bg-grid/30 transition-colors ${
         incident.rogueAi && incident.status !== 'RESOLVED' ? 'bg-danger/5' : ''
       }`}
     >
-      <TierBadge tier={incident.tier} />
-      <span className="text-ash">#{incident.id.slice(0, 8)}…</span>
+      <button onClick={onClick} className="flex items-center gap-2 flex-1 min-w-0 text-left">
+        <TierBadge tier={incident.tier} />
+        <span className="text-ash font-mono truncate">#{incident.id}</span>
+      </button>
       <StatusLabel status={incident.status} />
-    </button>
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          onCopyToTerminal(`//${incident.id}`);
+        }}
+        title={`Copy //${incident.id} to terminal`}
+        className="shrink-0 border border-ash text-ash text-[9px] px-1.5 py-0.5 hover:border-signal hover:text-signal transition-colors"
+      >
+        Copy to terminal
+      </button>
+    </div>
   );
 }
 

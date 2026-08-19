@@ -1,8 +1,6 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import type { Socket } from 'socket.io-client';
-import { sendNormalizedCommand } from '@/lib/socket-client';
 
 export interface RogueAiActive {
   rogueAiIncidentId: string;
@@ -28,7 +26,20 @@ const STEP_WINDOW_MS = 15_000;
 // actual deadline — only { rogueAiIncidentId, outcome, nextState }. This
 // countdown is a client-side mirror (reset to 15s on every transition), not
 // a server-confirmed remaining time.
-export function RogueAiPanel({ active, socket }: { active: RogueAiActive; socket: Socket | null }) {
+//
+// NOTE (design decision): this used to have one-click ISOLATE/TRACE/PURGE
+// buttons that issued the command directly over the socket. Removed on
+// purpose — the whole point of "boss-fight, has to be typed" is that a
+// button defeats it. The ID is still copy-assisted (nobody should have to
+// hand-type a UUID against a 15s clock) but the verb always has to be
+// typed in the terminal.
+export function RogueAiPanel({
+  active,
+  onCopyToTerminal,
+}: {
+  active: RogueAiActive;
+  onCopyToTerminal: (text: string) => void;
+}) {
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
@@ -41,16 +52,13 @@ export function RogueAiPanel({ active, socket }: { active: RogueAiActive; socket
   const isBad = TERMINAL_BAD.has(active.state);
   const currentStepIndex = STEPS.indexOf(active.state as (typeof STEPS)[number]);
   const nextCommand: 'ISOLATE' | 'TRACE' | 'PURGE' | null =
-    active.state === 'DETECTED' ? 'ISOLATE' : active.state === 'CONTAINED_STEP_1' ? 'TRACE' : active.state === 'CONTAINED_STEP_2' ? 'PURGE' : null;
-
-  function issue(command: 'ISOLATE' | 'TRACE' | 'PURGE') {
-    if (!socket) return;
-    sendNormalizedCommand(socket, {
-      type: 'ROGUE_AI_COMMAND',
-      rogueAiIncidentId: active.rogueAiIncidentId,
-      command,
-    });
-  }
+    active.state === 'DETECTED'
+      ? 'ISOLATE'
+      : active.state === 'CONTAINED_STEP_1'
+        ? 'TRACE'
+        : active.state === 'CONTAINED_STEP_2'
+          ? 'PURGE'
+          : null;
 
   return (
     <div className="flex flex-col gap-4 text-xs">
@@ -83,10 +91,19 @@ export function RogueAiPanel({ active, socket }: { active: RogueAiActive; socket
       )}
 
       {!isBad && nextCommand && (
-        <div className="bg-void border border-grid p-2.5 font-mono text-signal">
-          Expected next command:{' '}
-          <span className="bg-white/5 px-1">{`${nextCommand} //${active.rogueAiIncidentId}`}</span>
-        </div>
+        <>
+          <div className="bg-void border border-grid p-2.5 font-mono text-signal">
+            Type the verb first, then append the ID:
+            <br />
+            <span className="bg-white/5 px-1">{`${nextCommand} //${active.rogueAiIncidentId}`}</span>
+          </div>
+          <button
+            onClick={() => onCopyToTerminal(`//${active.rogueAiIncidentId}`)}
+            className="border border-danger text-danger font-display tracking-widest uppercase text-[10px] py-2 hover:bg-danger hover:text-void transition-colors"
+          >
+            Append ID to terminal
+          </button>
+        </>
       )}
 
       {!isBad && active.state !== 'NEUTRALIZED' && (
@@ -101,14 +118,6 @@ export function RogueAiPanel({ active, socket }: { active: RogueAiActive; socket
         </div>
       )}
 
-      {!isBad && active.state !== 'NEUTRALIZED' && (
-        <div className="flex gap-2">
-          <CommandButton label="Isolate" onClick={() => issue('ISOLATE')} disabled={nextCommand !== 'ISOLATE'} />
-          <CommandButton label="Trace" onClick={() => issue('TRACE')} disabled={nextCommand !== 'TRACE'} />
-          <CommandButton label="Purge" onClick={() => issue('PURGE')} disabled={nextCommand !== 'PURGE'} />
-        </div>
-      )}
-
       {active.state === 'NEUTRALIZED' && (
         <p className="text-signal">Rogue AI neutralized. Case will archive to K-BLACKBOX.</p>
       )}
@@ -119,25 +128,5 @@ export function RogueAiPanel({ active, socket }: { active: RogueAiActive; socket
         </p>
       )}
     </div>
-  );
-}
-
-function CommandButton({
-  label,
-  onClick,
-  disabled,
-}: {
-  label: string;
-  onClick: () => void;
-  disabled?: boolean;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      disabled={disabled}
-      className="flex-1 border border-danger text-danger font-display tracking-widest uppercase text-[10px] py-2 hover:bg-danger hover:text-void transition-colors disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-danger"
-    >
-      {label}
-    </button>
   );
 }
