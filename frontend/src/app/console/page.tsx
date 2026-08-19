@@ -428,10 +428,10 @@ export default function ConsolePage() {
           ))}
         </nav>
 
-        <main className="flex-1 min-h-0 p-3">
+        <main className="flex-1 min-h-0 p-3 overflow-y-auto">
           {view === 'OVERVIEW' && (
-            <div className="h-full flex flex-col gap-3">
-              <div className="grid grid-cols-[260px_1fr_300px_260px] gap-3 h-48 shrink-0">
+            <div className="min-h-full flex flex-col gap-3">
+              <div className="grid grid-cols-[260px_1fr_300px_260px] gap-3 h-56 shrink-0">
                 <Panel title="System state">
                   <div className="p-3 flex flex-col gap-3 text-xs">
                     <Row label="Autonomous mode" value={isAutonomous ? 'ACTIVE' : 'STANDBY'} />
@@ -475,7 +475,7 @@ export default function ConsolePage() {
                 </Panel>
               </div>
 
-              <div className="grid grid-cols-[260px_1fr_300px_260px] gap-3 flex-1 min-h-0">
+              <div className="grid grid-cols-[260px_1fr_300px_260px] gap-3 h-72 shrink-0">
                 <div className="col-span-2 min-h-0">
                   <Panel title="Incidents" className="h-full">
                     <div className="p-3 h-full">
@@ -492,7 +492,7 @@ export default function ConsolePage() {
                 </div>
               </div>
 
-              <Panel title="Command terminal" className="h-32 shrink-0">
+              <Panel title="Command terminal" className="h-44 shrink-0">
                 <ConsoleTerminal socket={socket} />
               </Panel>
             </div>

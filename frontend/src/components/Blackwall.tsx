@@ -55,6 +55,13 @@ export function Blackwall({ threatLevel }: { threatLevel: ThreatLevel }) {
       });
     }
 
+    // NOTE (bugfix): this used to resize only on `window.resize`, which
+    // never fires when a CSS/layout change resizes the panel itself (e.g.
+    // the dashboard row heights changing) without the browser window
+    // changing size — the canvas's internal pixel buffer could end up
+    // stuck at whatever size it was at mount, out of sync with its
+    // displayed CSS size. A ResizeObserver reacts to the actual element,
+    // not just the window.
     const resize = () => {
       const rect = canvas.getBoundingClientRect();
       const dpr = window.devicePixelRatio || 1;
@@ -63,7 +70,8 @@ export function Blackwall({ threatLevel }: { threatLevel: ThreatLevel }) {
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     };
     resize();
-    window.addEventListener('resize', resize);
+    const observer = new ResizeObserver(resize);
+    observer.observe(canvas);
 
     const DANGER_RGB = '232, 63, 107';
     const SIGNAL_RGB = '63, 208, 232';
@@ -125,7 +133,7 @@ export function Blackwall({ threatLevel }: { threatLevel: ThreatLevel }) {
 
     return () => {
       cancelAnimationFrame(rafRef.current);
-      window.removeEventListener('resize', resize);
+      observer.disconnect();
     };
   }, []);
 
