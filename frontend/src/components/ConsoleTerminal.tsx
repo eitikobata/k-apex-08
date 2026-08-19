@@ -122,5 +122,20 @@ export function ConsoleTerminal({ socket }: { socket: Socket | null }) {
     };
   }, [socket]);
 
-  return <div ref={containerRef} className="terminal-shell" />;
+  // NOTE (layout): the terminal *panel* is tall on purpose (flex-1, glued
+  // to the page bottom — see console/page.tsx). xterm itself, though, is a
+  // real terminal emulator: it fills its container top-down like any shell
+  // and only starts scrolling once the buffer exceeds the visible rows. On
+  // a tall, mostly-empty container that meant a handful of commands sat
+  // near the top with a wall of blank space below — technically correct,
+  // reads as broken. Fix: give xterm a fixed, modest height (enough rows
+  // to feel like a terminal) and let flexbox (`justify-end` on the outer
+  // wrapper) pin that block to the bottom of the tall panel. Once enough
+  // lines accumulate to fill that fixed height, xterm's own scrollback
+  // takes over exactly like a normal terminal.
+  return (
+    <div className="h-full flex flex-col justify-end">
+      <div ref={containerRef} className="terminal-shell" style={{ height: 260 }} />
+    </div>
+  );
 }
