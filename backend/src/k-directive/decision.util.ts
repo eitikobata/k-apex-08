@@ -14,12 +14,15 @@ export interface DecisionResult {
 }
 
 export function decideIncidentHandling(tier: ThreatTier, autonomousModeActive: boolean): DecisionResult {
-  if (tier === 'LATCH') {
-    // Low severity always self-resolves, autonomous mode or not.
-    return { requiresOperator: false, actionType: 'FLAG_ONLY', autonomous: autonomousModeActive };
-  }
-
-  const actionType: KuroIceActionType = tier === 'SPLICE' ? 'BLOCK_TRAFFIC' : 'ISOLATE_NODE';
+  // NOTE: LATCH used to always self-resolve here ("low severity", no
+  // operator involvement at all, autonomous or not) — that meant LATCH
+  // incidents never reached AWAITING_OPERATOR, never showed up in the
+  // console, and the operator never got to interact with them. Now every
+  // tier follows the same rule: requires the operator unless autonomous
+  // mode is active. LATCH still gets the lightest action (FLAG_ONLY) and,
+  // on the frontend, the least typing friction — the escalation is in
+  // effort required, not in whether the operator is involved at all.
+  const actionType: KuroIceActionType = tier === 'LATCH' ? 'FLAG_ONLY' : tier === 'SPLICE' ? 'BLOCK_TRAFFIC' : 'ISOLATE_NODE';
 
   if (autonomousModeActive) {
     return { requiresOperator: false, actionType, autonomous: true };

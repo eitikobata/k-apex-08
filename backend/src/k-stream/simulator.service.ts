@@ -88,10 +88,24 @@ export class SimulatorService implements OnModuleInit {
     if (Math.random() < MULTI_STAGE_CHANCE) {
       await this.injectMultiStageSequence(nodes);
     }
-    if (Math.random() < ROGUE_AI_CHANCE) {
+    // NOTE: only one Rogue AI incident is allowed active at a time —
+    // concurrent ones got genuinely hard to operate (two floating
+    // containment panels fighting for attention, easy to lose track of
+    // which command targets which incident). The frontend can technically
+    // handle more than one (RogueAiPanel is keyed by rogueAiIncidentId),
+    // but enforcing "one at a time" here is simpler for the operator than
+    // relying on that never being tested by overlapping incidents.
+    if (Math.random() < ROGUE_AI_CHANCE && !(await this.hasActiveRogueAi())) {
       const target = nodes[Math.floor(Math.random() * nodes.length)];
       await this.injectRogueAiSignature(target.id);
     }
+  }
+
+  private async hasActiveRogueAi(): Promise<boolean> {
+    const count = await this.prisma.rogueAiIncident.count({
+      where: { state: { in: ['DETECTED', 'CONTAINED_STEP_1', 'CONTAINED_STEP_2'] } },
+    });
+    return count > 0;
   }
 
   /**

@@ -1,12 +1,15 @@
 import { decideIncidentHandling } from './decision.util';
 
 describe('decideIncidentHandling', () => {
-  it('LATCH always self-resolves regardless of autonomous mode', () => {
+  it('LATCH requires operator when autonomous mode is off (used to always self-resolve — that meant LATCH never reached the operator at all)', () => {
     expect(decideIncidentHandling('LATCH', false)).toEqual({
-      requiresOperator: false,
+      requiresOperator: true,
       actionType: 'FLAG_ONLY',
       autonomous: false,
     });
+  });
+
+  it('LATCH self-resolves when autonomous mode is on', () => {
     expect(decideIncidentHandling('LATCH', true)).toEqual({
       requiresOperator: false,
       actionType: 'FLAG_ONLY',

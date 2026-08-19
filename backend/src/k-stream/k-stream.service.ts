@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { Interval } from '@nestjs/schedule';
 import type { Redis } from 'ioredis';
 import { REDIS_CLIENT } from '../common/redis/redis.module';
@@ -240,6 +240,16 @@ export class KStreamService implements OnModuleInit {
 
     let rogueAiNodeId: string | undefined;
     if (isRogueAi) {
+      // Same "one Rogue AI at a time" rule the simulator follows now
+      // (see SimulatorService.tick) — the debug button is a shortcut for
+      // testing, not an exemption from the rule it's testing.
+      const activeCount = await this.prisma.rogueAiIncident.count({
+        where: { state: { in: ['DETECTED', 'CONTAINED_STEP_1', 'CONTAINED_STEP_2'] } },
+      });
+      if (activeCount > 0) {
+        throw new BadRequestException('A Rogue AI incident is already active — resolve it before injecting another.');
+      }
+
       const nodes = await this.prisma.networkNode.findMany();
       if (nodes.length === 0) {
         throw new Error('No network nodes seeded yet — the simulator seeds them on first tick, try again shortly');
