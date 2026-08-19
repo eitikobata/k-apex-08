@@ -1,7 +1,5 @@
 'use client';
 
-import { useMemo, useState } from 'react';
-
 export interface IncidentRecord {
   id: string;
   tier: 'LATCH' | 'SPLICE' | 'SHATTER';
@@ -9,103 +7,93 @@ export interface IncidentRecord {
   rogueAi: boolean;
   createdAt: string;
   updatedAt: string;
+  // NOTE (honesty flag / alarm fatigue): the frontend can't tell WHICH node
+  // or WHAT KIND of incident this is — INCIDENT_AWAITING_OPERATOR only ever
+  // sends { incidentId, tier, rogueAi? }, never a description. Fatigue is
+  // therefore tracked per-tier (consecutive unconfirmed LATCH incidents),
+  // not per-node like the brief describes ("same noisy node"), because the
+  // node identity simply isn't on the wire yet. See ConsolePage's fatigue
+  // counter. Incident.alarmFatigueDeprioritized already exists in the
+  // Prisma schema but nothing sets it server-side — this flag is a
+  // client-only, session-scoped approximation.
+  deprioritized?: boolean;
 }
 
-type StatusFilter = 'ALL' | IncidentRecord['status'];
-
-// NOTE (honesty flag): this list is built entirely from live socket events
-// (INCIDENT_AWAITING_OPERATOR, ROGUE_AI_TRANSITION, ROGUE_AI_RESOLVED_AUTONOMOUSLY)
-// accumulated client-side by ConsolePage — see the reducer logic there. It's
-// real, current data, but session-scoped: reload the tab and history is
-// gone. Backfilling past incidents needs GET /k-stream/incidents (see
-// kStreamApi.listIncidents in api-client.ts), which doesn't exist yet.
+// NOTE (honesty flag): mockup rows show a description like "Node silent
+// after 3 retry attempts — NODE-14" — that text needs `kind`/node fields
+// the backend doesn't broadcast today. Rows here show what's real (tier,
+// id, status, elapsed) and skip the description rather than invent one.
 export function IncidentsPanel({
   incidents,
-  onOpenCase,
+  onRowClick,
 }: {
   incidents: IncidentRecord[];
-  onOpenCase: (incidentId: string) => void;
+  onRowClick: (incident: IncidentRecord) => void;
 }) {
-  const [filter, setFilter] = useState<StatusFilter>('ALL');
-
-  const filtered = useMemo(() => {
-    const list = filter === 'ALL' ? incidents : incidents.filter((i) => i.status === filter);
-    return [...list].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-  }, [incidents, filter]);
+  const active = incidents.filter((i) => !i.deprioritized);
+  const deprioritized = incidents.filter((i) => i.deprioritized);
+  const sorted = [...active].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 
   return (
-    <div className="p-3 h-full flex flex-col gap-2 text-xs">
-      <div className="flex items-center justify-between shrink-0">
-        <p className="text-ash">
-          {incidents.length} incident{incidents.length === 1 ? '' : 's'} this session
-        </p>
-        <select
-          value={filter}
-          onChange={(e) => setFilter(e.target.value as StatusFilter)}
-          className="bg-void panel-border px-2 py-1 text-ash-bright outline-none focus:border-signal text-[10px]"
-        >
-          <option value="ALL">All statuses</option>
-          <option value="AWAITING_OPERATOR">Awaiting operator</option>
-          <option value="ROGUE_AI_ACTIVE">Rogue AI active</option>
-          <option value="RESOLVED">Resolved</option>
-          <option value="ESCALATED">Escalated</option>
-        </select>
+    <div className="flex flex-col h-full text-xs">
+      <div className="flex-1 min-h-0 overflow-y-auto flex flex-col">
+        {sorted.length === 0 && <span className="text-ash">No incidents this session.</span>}
+        {sorted.map((inc) => (
+          <IncidentRow key={inc.id} incident={inc} onClick={() => onRowClick(inc)} />
+        ))}
       </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto">
-        {filtered.length === 0 && <span className="text-ash">No incidents match this filter.</span>}
-        {filtered.length > 0 && (
-          <table className="w-full text-left font-mono">
-            <thead>
-              <tr className="border-b border-grid text-ash uppercase tracking-wider">
-                <th className="py-1 pr-3">Tier</th>
-                <th className="py-1 pr-3">Incident</th>
-                <th className="py-1 pr-3">Status</th>
-                <th className="py-1 pr-3">Updated</th>
-                <th className="py-1 pr-3" />
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((inc) => (
-                <tr key={inc.id} className="border-b border-grid/50 text-ash-bright">
-                  <td className={`py-1.5 pr-3 ${tierClass(inc.tier)}`}>{inc.tier}</td>
-                  <td className="py-1.5 pr-3">{inc.id.slice(0, 8)}…</td>
-                  <td className="py-1.5 pr-3">
-                    <StatusPill status={inc.status} />
-                  </td>
-                  <td className="py-1.5 pr-3 text-ash">
-                    {new Date(inc.updatedAt).toLocaleTimeString()}
-                  </td>
-                  <td className="py-1.5 pr-3">
-                    <button
-                      onClick={() => onOpenCase(inc.id)}
-                      className="border border-signal text-signal px-2 py-0.5 hover:bg-signal hover:text-void transition-colors"
-                    >
-                      Open in K-BLACKBOX
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
+      {deprioritized.length > 0 && (
+        <div className="mt-3 pt-2 border-t border-dashed border-grid opacity-50">
+          <div className="text-[10px] text-ash tracking-widest uppercase mb-1">
+            Deprioritized (alarm fatigue — repeated LATCH ignored)
+          </div>
+          {deprioritized.map((inc) => (
+            <div key={inc.id} className="scale-95 origin-left">
+              <IncidentRow incident={inc} onClick={() => onRowClick(inc)} />
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
 
-function tierClass(tier: IncidentRecord['tier']): string {
-  if (tier === 'SHATTER') return 'text-danger';
-  if (tier === 'SPLICE') return 'text-warn';
-  return 'text-signal';
+function IncidentRow({ incident, onClick }: { incident: IncidentRecord; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`grid grid-cols-[70px_1fr_130px] gap-2 items-center px-1 py-2 border-b border-grid text-left hover:bg-grid/30 transition-colors ${
+        incident.rogueAi && incident.status !== 'RESOLVED' ? 'bg-danger/5' : ''
+      }`}
+    >
+      <TierBadge tier={incident.tier} />
+      <span className="text-ash">#{incident.id.slice(0, 8)}…</span>
+      <StatusLabel status={incident.status} />
+    </button>
+  );
 }
 
-function StatusPill({ status }: { status: IncidentRecord['status'] }) {
+function TierBadge({ tier }: { tier: IncidentRecord['tier'] }) {
+  const cls =
+    tier === 'SHATTER'
+      ? 'text-danger border-danger bg-danger/10'
+      : tier === 'SPLICE'
+        ? 'text-warn border-warn'
+        : 'text-signal border-signal';
+  return (
+    <span className={`inline-block font-display text-[10px] tracking-wider uppercase border px-1.5 py-0.5 ${cls}`}>
+      {tier}
+    </span>
+  );
+}
+
+function StatusLabel({ status }: { status: IncidentRecord['status'] }) {
   const map: Record<IncidentRecord['status'], string> = {
     AWAITING_OPERATOR: 'text-warn',
     ROGUE_AI_ACTIVE: 'text-danger',
     RESOLVED: 'text-signal',
     ESCALATED: 'text-danger',
   };
-  return <span className={map[status]}>{status.replace(/_/g, ' ')}</span>;
+  return <span className={`${map[status]} text-right`}>{status.replace(/_/g, ' ')}</span>;
 }

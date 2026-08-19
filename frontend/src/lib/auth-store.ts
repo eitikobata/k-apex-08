@@ -10,6 +10,14 @@ interface AuthState {
   session: OperatorSession | null;
   /** Decoded from the access token's payload — UI-only, never trust this for real authorization. */
   role: string | null;
+  /**
+   * Decoded `sub` claim (the operator's id). The access token has no
+   * callsign — only { sub, role } (see TokenService.issueTokenPair on the
+   * backend) — so the topbar/account chip shows this truncated id, not a
+   * display name. Showing the real callsign needs a GET /k-id/me endpoint
+   * that doesn't exist yet.
+   */
+  operatorId: string | null;
   setSession: (session: OperatorSession) => void;
   clearSession: () => void;
   hydrate: () => void;
@@ -24,14 +32,14 @@ const STORAGE_KEY = 'kapex08.session';
  * (RolesGuard / PermissionsGuard), so a tampered client-side value can't
  * grant real access, only a misleading button.
  */
-function decodeJwtRole(token: string): string | null {
+function decodeJwtPayload(token: string): { role: string | null; operatorId: string | null } {
   try {
     const payloadB64 = token.split('.')[1];
     const json = atob(payloadB64.replace(/-/g, '+').replace(/_/g, '/'));
-    const payload = JSON.parse(json) as { role?: string };
-    return payload.role ?? null;
+    const payload = JSON.parse(json) as { role?: string; sub?: string };
+    return { role: payload.role ?? null, operatorId: payload.sub ?? null };
   } catch {
-    return null;
+    return { role: null, operatorId: null };
   }
 }
 
@@ -44,19 +52,20 @@ function decodeJwtRole(token: string): string | null {
 export const useAuthStore = create<AuthState>((set) => ({
   session: null,
   role: null,
+  operatorId: null,
 
   setSession: (session) => {
     if (typeof window !== 'undefined') {
       sessionStorage.setItem(STORAGE_KEY, JSON.stringify(session));
     }
-    set({ session, role: decodeJwtRole(session.accessToken) });
+    set({ session, ...decodeJwtPayload(session.accessToken) });
   },
 
   clearSession: () => {
     if (typeof window !== 'undefined') {
       sessionStorage.removeItem(STORAGE_KEY);
     }
-    set({ session: null, role: null });
+    set({ session: null, role: null, operatorId: null });
   },
 
   hydrate: () => {
@@ -65,7 +74,7 @@ export const useAuthStore = create<AuthState>((set) => ({
     if (!raw) return;
     try {
       const session = JSON.parse(raw) as OperatorSession;
-      set({ session, role: decodeJwtRole(session.accessToken) });
+      set({ session, ...decodeJwtPayload(session.accessToken) });
     } catch {
       sessionStorage.removeItem(STORAGE_KEY);
     }

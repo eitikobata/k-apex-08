@@ -4,14 +4,21 @@ import { useEffect, useState } from 'react';
 import { ApiError, CaseFileSummaryDto, kBlackboxApi } from '@/lib/api-client';
 import type { IncidentRecord } from './IncidentsPanel';
 
-// NOTE (honesty flag): GET /k-blackbox/cases doesn't exist yet, so the case
-// archive falls back to incidents already seen this session (real IDs, from
-// the same socket-driven state IncidentsPanel uses) plus a manual ID field.
-// Summarize and Replay ARE real endpoints (KBlackboxController) — they work
-// against any valid incidentId right now, list or no list. Semantic search
-// is left out entirely: POST /k-blackbox/cases/search takes a precomputed
-// embedding vector, and there's no server-side "turn this text into an
-// embedding" step yet, so a text search box would have nothing real to call.
+interface CaseRowData {
+  incidentId: string;
+  tier?: IncidentRecord['tier'];
+  createdAt: string;
+  aiSummary?: string | null;
+}
+
+// NOTE (honesty flag): GET /k-blackbox/cases doesn't exist yet, so the
+// archive falls back to resolved/escalated incidents seen this session
+// (real IDs, same socket-driven state IncidentsPanel uses). Summarize and
+// Replay ARE real endpoints (KBlackboxController) and work against any
+// valid incidentId regardless. The "search similar cases" box from the
+// mockup is kept visually but disabled — the real search endpoint takes a
+// precomputed embedding vector, not text, and there's no server-side
+// "embed this query" step yet, so it has nothing real to call.
 export function BlackboxPanel({
   accessToken,
   sessionIncidents,
@@ -21,20 +28,21 @@ export function BlackboxPanel({
   sessionIncidents: IncidentRecord[];
   onOpenReplay: (incidentId: string) => void;
 }) {
-  const [cases, setCases] = useState<CaseFileSummaryDto[] | null>(null);
+  const [remoteCases, setRemoteCases] = useState<CaseFileSummaryDto[] | null>(null);
   const [listError, setListError] = useState<string | null>(null);
   const [manualId, setManualId] = useState('');
   const [summaries, setSummaries] = useState<Record<string, string>>({});
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
 
   useEffect(() => {
     kBlackboxApi
       .listCases(accessToken)
-      .then((list) => setCases(list))
+      .then((list) => setRemoteCases(list))
       .catch((err) => {
         setListError(
           err instanceof ApiError && err.status === 404
-            ? 'Backend endpoint not deployed yet — this list will populate once GET /k-blackbox/cases exists. Using session incidents below instead.'
+            ? 'GET /k-blackbox/cases not deployed yet — showing resolved incidents from this session instead.'
             : err instanceof Error
               ? err.message
               : 'Failed to load case archive.',
@@ -42,14 +50,20 @@ export function BlackboxPanel({
       });
   }, [accessToken]);
 
+  const rows: CaseRowData[] =
+    remoteCases && remoteCases.length > 0
+      ? remoteCases.map((c) => ({ incidentId: c.incidentId, createdAt: c.createdAt, aiSummary: c.aiSummary }))
+      : sessionIncidents
+          .filter((i) => i.status === 'RESOLVED' || i.status === 'ESCALATED')
+          .map((i) => ({ incidentId: i.id, tier: i.tier, createdAt: i.updatedAt }));
+
+  const selected = rows.find((r) => r.incidentId === selectedId) ?? rows[0] ?? null;
+
   async function summarize(incidentId: string) {
     setBusyId(incidentId);
     try {
       const result = await kBlackboxApi.summarize(accessToken, incidentId);
-      setSummaries((prev) => ({
-        ...prev,
-        [incidentId]: result.summary ?? result.skipped ?? 'No summary returned.',
-      }));
+      setSummaries((prev) => ({ ...prev, [incidentId]: result.summary ?? result.skipped ?? 'No summary returned.' }));
     } catch (err) {
       setSummaries((prev) => ({
         ...prev,
@@ -60,94 +74,75 @@ export function BlackboxPanel({
     }
   }
 
-  const fallbackRows = sessionIncidents.filter(
-    (i) => i.status === 'RESOLVED' || i.status === 'ESCALATED',
-  );
-
   return (
-    <div className="p-3 h-full flex flex-col gap-3 text-xs">
-      <div className="flex gap-2 items-end shrink-0">
-        <label className="flex flex-col gap-1 flex-1">
-          <span className="text-[10px] text-ash tracking-widest uppercase">
-            Open case by incident ID
-          </span>
+    <div className="grid grid-cols-[1fr_1fr] gap-4 h-full text-xs">
+      <div className="flex flex-col min-h-0">
+        {listError && <p className="text-warn mb-2">{listError}</p>}
+        <div className="flex-1 min-h-0 overflow-y-auto">
+          {rows.length === 0 && <p className="text-ash">No resolved cases yet this session.</p>}
+          {rows.map((r) => (
+            <button
+              key={r.incidentId}
+              onClick={() => setSelectedId(r.incidentId)}
+              className={`w-full text-left px-2 py-2 border-b border-grid hover:bg-grid/30 transition-colors ${
+                selected?.incidentId === r.incidentId ? 'bg-signal/5 border-l-2 border-l-signal' : ''
+              }`}
+            >
+              {r.tier ? <span className="mr-2">{r.tier}</span> : null} #{r.incidentId.slice(0, 8)}… —{' '}
+              {new Date(r.createdAt).toLocaleDateString()}
+            </button>
+          ))}
+        </div>
+
+        <div className="flex gap-2 mt-3 pt-3 border-t border-dashed border-grid">
+          <input
+            disabled
+            placeholder="Search similar cases… (needs text→embedding endpoint)"
+            className="flex-1 bg-void border border-grid px-2 py-1.5 text-ash outline-none opacity-50 cursor-not-allowed"
+          />
+        </div>
+
+        <div className="flex gap-2 mt-2">
           <input
             value={manualId}
             onChange={(e) => setManualId(e.target.value)}
-            placeholder="incident uuid…"
-            className="bg-void panel-border px-2 py-1.5 text-ash-bright outline-none focus:border-signal"
+            placeholder="Open by incident ID…"
+            className="flex-1 bg-void panel-border px-2 py-1.5 text-ash-bright outline-none focus:border-signal"
           />
-        </label>
-        <button
-          disabled={!manualId.trim()}
-          onClick={() => onOpenReplay(manualId.trim())}
-          className="border border-signal text-signal font-display tracking-widest uppercase text-[10px] px-3 py-1.5 hover:bg-signal hover:text-void transition-colors disabled:opacity-40"
-        >
-          Replay
-        </button>
+          <button
+            disabled={!manualId.trim()}
+            onClick={() => setSelectedId(manualId.trim())}
+            className="border border-signal text-signal font-display tracking-widest uppercase text-[10px] px-3 hover:bg-signal hover:text-void transition-colors disabled:opacity-40"
+          >
+            Open
+          </button>
+        </div>
       </div>
 
-      {listError && <p className="text-warn shrink-0">{listError}</p>}
-
-      <div className="flex-1 min-h-0 overflow-y-auto">
-        {cases && cases.length > 0 && (
-          <table className="w-full text-left font-mono mb-3">
-            <thead>
-              <tr className="border-b border-grid text-ash uppercase tracking-wider">
-                <th className="py-1 pr-3">Incident</th>
-                <th className="py-1 pr-3">Archived</th>
-                <th className="py-1 pr-3">AI summary</th>
-                <th className="py-1 pr-3" />
-              </tr>
-            </thead>
-            <tbody>
-              {cases.map((c) => (
-                <CaseRow
-                  key={c.id}
-                  incidentId={c.incidentId}
-                  createdAt={c.createdAt}
-                  summary={summaries[c.incidentId] ?? c.aiSummary}
-                  busy={busyId === c.incidentId}
-                  onSummarize={() => summarize(c.incidentId)}
-                  onReplay={() => onOpenReplay(c.incidentId)}
-                />
-              ))}
-            </tbody>
-          </table>
-        )}
-
-        {(!cases || cases.length === 0) && (
+      <div className="flex flex-col min-h-0">
+        {!selected && <p className="text-ash">Select a case to see its detail.</p>}
+        {selected && (
           <>
-            <p className="text-ash mb-2">
-              {fallbackRows.length > 0
-                ? 'Resolved incidents from this session:'
-                : 'No resolved incidents yet this session.'}
-            </p>
-            {fallbackRows.length > 0 && (
-              <table className="w-full text-left font-mono">
-                <thead>
-                  <tr className="border-b border-grid text-ash uppercase tracking-wider">
-                    <th className="py-1 pr-3">Incident</th>
-                    <th className="py-1 pr-3">Updated</th>
-                    <th className="py-1 pr-3">AI summary</th>
-                    <th className="py-1 pr-3" />
-                  </tr>
-                </thead>
-                <tbody>
-                  {fallbackRows.map((inc) => (
-                    <CaseRow
-                      key={inc.id}
-                      incidentId={inc.id}
-                      createdAt={inc.updatedAt}
-                      summary={summaries[inc.id]}
-                      busy={busyId === inc.id}
-                      onSummarize={() => summarize(inc.id)}
-                      onReplay={() => onOpenReplay(inc.id)}
-                    />
-                  ))}
-                </tbody>
-              </table>
-            )}
+            {selected.tier && <Row label="Tier" value={selected.tier} />}
+            <Row label="Incident" value={`#${selected.incidentId.slice(0, 8)}…`} />
+            <div className="flex-1 min-h-0 overflow-y-auto text-signal leading-relaxed py-3">
+              {summaries[selected.incidentId] ?? selected.aiSummary ?? 'No AI summary yet.'}
+            </div>
+            <div className="flex gap-2 shrink-0">
+              <button
+                onClick={() => summarize(selected.incidentId)}
+                disabled={busyId === selected.incidentId}
+                className="border border-signal text-signal font-display tracking-widest uppercase text-[10px] px-3 py-1.5 hover:bg-signal hover:text-void transition-colors disabled:opacity-40"
+              >
+                {busyId === selected.incidentId ? 'Working…' : 'Summarize'}
+              </button>
+              <button
+                onClick={() => onOpenReplay(selected.incidentId)}
+                className="border border-ash text-ash font-display tracking-widest uppercase text-[10px] px-3 py-1.5 hover:border-ash-bright hover:text-ash-bright transition-colors"
+              >
+                Open replay
+              </button>
+            </div>
           </>
         )}
       </div>
@@ -155,41 +150,11 @@ export function BlackboxPanel({
   );
 }
 
-function CaseRow({
-  incidentId,
-  createdAt,
-  summary,
-  busy,
-  onSummarize,
-  onReplay,
-}: {
-  incidentId: string;
-  createdAt: string;
-  summary?: string | null;
-  busy: boolean;
-  onSummarize: () => void;
-  onReplay: () => void;
-}) {
+function Row({ label, value }: { label: string; value: string }) {
   return (
-    <tr className="border-b border-grid/50 text-ash-bright align-top">
-      <td className="py-1.5 pr-3">{incidentId.slice(0, 8)}…</td>
-      <td className="py-1.5 pr-3 text-ash">{new Date(createdAt).toLocaleString()}</td>
-      <td className="py-1.5 pr-3 max-w-xs text-ash">{summary ?? '—'}</td>
-      <td className="py-1.5 pr-3 flex gap-2">
-        <button
-          onClick={onSummarize}
-          disabled={busy}
-          className="border border-signal text-signal px-2 py-0.5 hover:bg-signal hover:text-void transition-colors disabled:opacity-40"
-        >
-          {busy ? 'Working…' : 'Summarize'}
-        </button>
-        <button
-          onClick={onReplay}
-          className="border border-ash text-ash px-2 py-0.5 hover:border-ash-bright hover:text-ash-bright transition-colors"
-        >
-          Replay
-        </button>
-      </td>
-    </tr>
+    <div className="flex justify-between border-b border-grid pb-1 mb-1">
+      <span className="text-ash uppercase tracking-wider">{label}</span>
+      <span className="text-ash-bright">{value}</span>
+    </div>
   );
 }

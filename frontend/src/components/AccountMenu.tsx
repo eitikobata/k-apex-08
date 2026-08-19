@@ -6,9 +6,15 @@ import { kIdApi } from '@/lib/api-client';
 import { useAuthStore } from '@/lib/auth-store';
 import { ChangePasswordModal } from './ChangePasswordModal';
 
+// NOTE (honesty flag): the access token only carries { sub, role } — no
+// callsign (see TokenService.issueTokenPair on the backend). The chip shows
+// role + a truncated operator id instead of a display name; a real
+// callsign needs a GET /k-id/me endpoint that doesn't exist yet.
 export function AccountMenu({ accessToken }: { accessToken: string }) {
   const router = useRouter();
   const clearSession = useAuthStore((s) => s.clearSession);
+  const role = useAuthStore((s) => s.role);
+  const operatorId = useAuthStore((s) => s.operatorId);
 
   const [open, setOpen] = useState(false);
   const [showPasswordModal, setShowPasswordModal] = useState(false);
@@ -56,9 +62,10 @@ export function AccountMenu({ accessToken }: { accessToken: string }) {
     <div className="relative">
       <button
         onClick={() => setOpen((v) => !v)}
-        className="border border-ash text-ash hover:border-ash-bright hover:text-ash-bright font-display tracking-widest uppercase text-[10px] px-2 py-1 transition-colors"
+        className="flex items-center gap-2 border border-grid hover:border-ash px-2.5 py-1 transition-colors"
       >
-        Account ▾
+        <span className="text-ash-bright text-[11px]">{operatorId ? `#${operatorId.slice(0, 8)}…` : '—'}</span>
+        <span className="text-danger text-[10px] tracking-wider">{role ?? '—'}</span>
       </button>
 
       {open && (
