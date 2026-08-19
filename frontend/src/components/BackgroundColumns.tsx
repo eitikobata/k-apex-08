@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useEffect, useState } from 'react';
 
 const COL1 = [
   'Node telemetry baseline recalibrated.',
@@ -60,9 +60,20 @@ function Column({ lines, durationSec }: { lines: string[]; durationSec: number }
   );
 }
 
+// NOTE (bugfix, pre-existing — not introduced by the console rewrite):
+// Math.random() run inside useMemo executes on both the server render and
+// the client's hydration render, and produces different digits each time —
+// classic hydration mismatch. useEffect only ever runs client-side, after
+// hydration completes, so the random content is generated once, safely,
+// after React has already reconciled a matching (empty) first paint.
 export function BackgroundColumns() {
-  const hexLines = useMemo(() => Array.from({ length: 26 }, randomHex), []);
-  const binLines = useMemo(() => Array.from({ length: 26 }, randomBinary), []);
+  const [hexLines, setHexLines] = useState<string[]>([]);
+  const [binLines, setBinLines] = useState<string[]>([]);
+
+  useEffect(() => {
+    setHexLines(Array.from({ length: 26 }, randomHex));
+    setBinLines(Array.from({ length: 26 }, randomBinary));
+  }, []);
 
   return (
     <div className="bg-columns" aria-hidden="true">

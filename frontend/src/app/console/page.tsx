@@ -12,6 +12,7 @@ import { Blackwall, ThreatLevel } from '@/components/Blackwall';
 import { LockdownOverlay } from '@/components/LockdownOverlay';
 import { TopBar } from '@/components/TopBar';
 import { NotesPanel } from '@/components/NotesPanel';
+import { InstructionsPanel } from '@/components/InstructionsPanel';
 import { IncidentsPanel, IncidentRecord } from '@/components/IncidentsPanel';
 import { IncidentConfirmModal } from '@/components/IncidentConfirmModal';
 import { NodeGrid } from '@/components/NodeGrid';
@@ -287,16 +288,35 @@ export default function ConsolePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session]);
 
-  async function sendHeartbeat() {
+  async function sendHeartbeat(silent = false) {
     if (!session) return;
     try {
       await kDirectiveApi.heartbeat(session.accessToken);
-      pushFeed('Heartbeat sent.', 'signal');
+      if (!silent) pushFeed('Heartbeat sent.', 'signal');
       void refreshSystemState();
     } catch {
-      pushFeed('Heartbeat failed.', 'danger');
+      if (!silent) pushFeed('Heartbeat failed.', 'danger');
     }
   }
+
+  // NOTE (bugfix): heartbeat was manual-only — an open tab wasn't enough to
+  // keep the dead man's switch happy, so autonomous mode kicked in almost
+  // immediately in practice and every incident got auto-resolved before
+  // ever reaching AWAITING_OPERATOR (see AutonomousModeService.checkForTimeout
+  // on the backend — silent, no gateway event, so nothing showed up here
+  // either). An open console tab having someone at it is exactly what the
+  // heartbeat is meant to represent, so it's sent automatically now.
+  // Paused while already in lockdown — recordOperatorHeartbeat on the
+  // backend hands control back the moment a heartbeat lands during an
+  // AUTO_TIMEOUT lockout, which would silently clear "Stand down" out from
+  // under the operator without them doing anything.
+  useEffect(() => {
+    if (!session || systemState?.autonomousModeActive) return;
+    void sendHeartbeat(true);
+    const interval = setInterval(() => void sendHeartbeat(true), 20_000);
+    return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session, systemState?.autonomousModeActive]);
 
   async function toggleAutonomous() {
     if (!session || autonomousBusy) return;
@@ -411,13 +431,13 @@ export default function ConsolePage() {
         <main className="flex-1 min-h-0 p-3">
           {view === 'OVERVIEW' && (
             <div className="h-full flex flex-col gap-3">
-              <div className="grid grid-cols-[260px_1fr_300px_260px] gap-3 h-64 shrink-0">
+              <div className="grid grid-cols-[260px_1fr_300px_260px] gap-3 h-48 shrink-0">
                 <Panel title="System state">
                   <div className="p-3 flex flex-col gap-3 text-xs">
                     <Row label="Autonomous mode" value={isAutonomous ? 'ACTIVE' : 'STANDBY'} />
                     <Row label="Origin" value={systemState?.activatedOrigin ?? '—'} />
                     <button
-                      onClick={sendHeartbeat}
+                      onClick={() => sendHeartbeat()}
                       className="mt-2 border border-signal text-signal font-display tracking-widest uppercase text-[10px] py-1.5 hover:bg-signal hover:text-void transition-colors"
                     >
                       Send heartbeat
@@ -450,8 +470,8 @@ export default function ConsolePage() {
                   </div>
                 </Panel>
 
-                <Panel title="Notes">
-                  <NotesPanel />
+                <Panel title="Instructions">
+                  <InstructionsPanel />
                 </Panel>
               </div>
 
@@ -472,7 +492,7 @@ export default function ConsolePage() {
                 </div>
               </div>
 
-              <Panel title="Command terminal" className="h-40 shrink-0">
+              <Panel title="Command terminal" className="h-32 shrink-0">
                 <ConsoleTerminal socket={socket} />
               </Panel>
             </div>
