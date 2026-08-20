@@ -267,7 +267,15 @@ model Incident {
 
   resolutionOrigin ResolutionOrigin?
   resolvedByOperatorId String?
-  resolvedByOperator   Operator? @relation("ResolvedByOperator", fields: [resolvedByOperatorId], references: [id])
+  // NOTE: only relation on Operator without an explicit onDelete — every
+  // other one already had Cascade or SetNull. Defaulted to Restrict,
+  // which meant DELETE /k-id/operators/:id would hard-fail with a raw FK
+  // constraint error the moment that operator had ever resolved a single
+  // incident. SetNull is right here: deleting the operator record
+  // shouldn't delete or block deleting the incident they resolved — the
+  // incident is the audit-relevant record, the operator link is a nice-
+  // to-have that degrades gracefully to "resolved by (deleted operator)".
+  resolvedByOperator   Operator? @relation("ResolvedByOperator", fields: [resolvedByOperatorId], references: [id], onDelete: SetNull)
   resolvedAt       DateTime?
 
   // Set when the incident enters AWAITING_OPERATOR (see K-DIRECTIVE's

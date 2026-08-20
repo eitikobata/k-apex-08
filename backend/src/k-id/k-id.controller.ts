@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Post, Req, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, Param, Post, Req, UseGuards } from '@nestjs/common';
 import type { Request } from 'express';
 import { KIdService } from './k-id.service';
 import { WebauthnService } from './webauthn.service';
@@ -64,6 +64,12 @@ export class KIdController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @Get('me')
+  async me(@CurrentOperator() operator: AuthenticatedOperator) {
+    return this.kId.getMe(operator.id);
+  }
+
+  @UseGuards(JwtAuthGuard)
   @Post('password')
   async changePassword(
     @CurrentOperator() operator: AuthenticatedOperator,
@@ -87,6 +93,36 @@ export class KIdController {
     @Body('deviceLabel') deviceLabel?: string,
   ) {
     return this.webauthn.verifyRegistration(operator.id, response, deviceLabel);
+  }
+
+  // --- Admin operator management -----------------------------------------
+  // Frontend (admin/page.tsx) has been built against these three since
+  // early on — never actually existed on the backend until now.
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  @Get('operators')
+  async listOperators() {
+    return this.kId.listOperators();
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  @Post('operators/:id/revoke-sessions')
+  async revokeOperatorSessions(@Param('id') operatorId: string, @CurrentOperator() operator: AuthenticatedOperator) {
+    await this.kId.revokeOperatorSessions(operatorId, operator.id);
+    return { status: 'ok' };
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  @Delete('operators/:id')
+  async deleteOperator(@Param('id') operatorId: string, @CurrentOperator() operator: AuthenticatedOperator) {
+    if (operatorId === operator.id) {
+      throw new BadRequestException('Cannot delete your own account while logged in as it.');
+    }
+    await this.kId.deleteOperator(operatorId, operator.id);
+    return { status: 'ok' };
   }
 
   // --- Granular permission management (ADMIN only) -----------------------

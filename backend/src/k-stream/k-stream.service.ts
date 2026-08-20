@@ -272,4 +272,20 @@ export class KStreamService implements OnModuleInit {
     this.logger.warn(`[DEBUG] Incident manually injected: type=${type} id=${incidentId}`);
     return { incidentId };
   }
+
+  /**
+   * Backs GET /k-stream/incidents — history backfill for IncidentsPanel,
+   * which otherwise only knows about incidents seen via live socket
+   * events since the tab was opened. Capped at 100, most recent first;
+   * this is a history list for orientation, not a paginated archive.
+   */
+  async listIncidents(): Promise<
+    { id: string; tier: string; status: string; kind: string; summary: string | null; createdAt: Date; resolvedAt: Date | null }[]
+  > {
+    return this.prisma.incident.findMany({
+      orderBy: { createdAt: 'desc' },
+      take: 100,
+      select: { id: true, tier: true, status: true, kind: true, summary: true, createdAt: true, resolvedAt: true },
+    });
+  }
 }

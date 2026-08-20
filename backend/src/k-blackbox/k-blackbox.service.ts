@@ -101,4 +101,20 @@ export class KBlackboxService {
     const kuroIceEntries = await this.blacktape.findByTarget('KuroIceAction', incidentId);
     return [...entries, ...kuroIceEntries].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
   }
+
+  /**
+   * Backs GET /k-blackbox/cases — BlackboxPanel.tsx's case archive list.
+   * The embedding column is deliberately excluded from the select (it's a
+   * pgvector Unsupported() type — Prisma can't select it normally anyway,
+   * and the frontend never needs it).
+   */
+  async listCases(): Promise<
+    { id: string; incidentId: string; aiSummary: string | null; aiSummaryFailed: boolean; createdAt: Date }[]
+  > {
+    return this.prisma.caseFile.findMany({
+      orderBy: { createdAt: 'desc' },
+      take: 100,
+      select: { id: true, incidentId: true, aiSummary: true, aiSummaryFailed: true, createdAt: true },
+    });
+  }
 }

@@ -21,6 +21,11 @@ export class KBlackboxController {
     return this.blackbox.replayIncident(incidentId);
   }
 
+  @Get('cases')
+  async listCases() {
+    return this.blackbox.listCases();
+  }
+
   @Post('cases/search')
   async search(@Body('embedding') embedding: number[], @Body('limit') limit?: number) {
     return this.blackbox.findSimilarCases(embedding, limit);

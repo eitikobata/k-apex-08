@@ -64,4 +64,25 @@ export class BlacktapeService {
       take,
     });
   }
+
+  /** Backs GET /k-blacktape/entries — AuditLogPanel.tsx. */
+  async listEntries(category?: BlacktapeCategory, take = 200): Promise<
+    { id: string; category: string; action: string; actorType: string; actorId: string | null; targetType: string | null; targetId: string | null; createdAt: Date }[]
+  > {
+    return this.prisma.blacktapeEntry.findMany({
+      where: category ? { category } : undefined,
+      orderBy: { createdAt: 'desc' },
+      take,
+      select: {
+        id: true,
+        category: true,
+        action: true,
+        actorType: true,
+        actorId: true,
+        targetType: true,
+        targetId: true,
+        createdAt: true,
+      },
+    });
+  }
 }

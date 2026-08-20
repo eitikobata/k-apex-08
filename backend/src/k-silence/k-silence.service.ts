@@ -85,6 +85,29 @@ export class KSilenceScannerService {
   async scheduleNext(silenceStateId: string, attemptNumber: number): Promise<void> {
     await this.scheduleRetry(silenceStateId, attemptNumber);
   }
+
+  /**
+   * Backs GET /k-silence/nodes — NodeGrid.tsx's 24-node status grid. A
+   * node can have MULTIPLE SilenceState rows over its lifetime (one per
+   * silence episode — no unique constraint on nodeId), so this takes only
+   * the most recent one per node via the relation's own orderBy+take, not
+   * a separate query per node. No SilenceState at all (never gone silent)
+   * defaults to ALIVE, matching a fresh node's real status.
+   */
+  async listNodes(): Promise<
+    { codeName: string; sector: number; status: string; lastHeartbeatAt: Date | null }[]
+  > {
+    const nodes = await this.prisma.networkNode.findMany({
+      orderBy: { codeName: 'asc' },
+      include: { silenceStates: { orderBy: { createdAt: 'desc' }, take: 1 } },
+    });
+    return nodes.map((node: { codeName: string; sector: number; lastHeartbeatAt: Date | null; silenceStates: { status: string }[] }) => ({
+      codeName: node.codeName,
+      sector: node.sector,
+      status: node.silenceStates[0]?.status ?? 'ALIVE',
+      lastHeartbeatAt: node.lastHeartbeatAt,
+    }));
+  }
 }
 
 @Processor(K_SILENCE_QUEUE)

@@ -240,6 +240,66 @@ export class KIdService {
     });
   }
 
+  /**
+   * Backs GET /k-id/me. The access token only carries {sub, role} (see
+   * TokenService.issueTokenPair) — the frontend's AccountMenu was showing
+   * a truncated operator id instead of the callsign because of that. Kept
+   * intentionally minimal (callsign + role only), matching what was
+   * agreed — not the full OperatorSummaryDto shape the admin list uses.
+   */
+  async getMe(operatorId: string): Promise<{ callsign: string; role: string }> {
+    const operator = await this.prisma.operator.findUniqueOrThrow({ where: { id: operatorId } });
+    return { callsign: operator.callsign, role: operator.role };
+  }
+
+  /**
+   * Backs GET /k-id/operators — the admin operators list the frontend has
+   * been built against since early on (AdminPage's loadOperators). Never
+   * returns passwordHash/totpSecret.
+   */
+  async listOperators(): Promise<
+    { id: string; callsign: string; email: string; role: string; totpEnabled: boolean; mfaExempt: boolean; createdAt: Date }[]
+  > {
+    return this.prisma.operator.findMany({
+      orderBy: { createdAt: 'asc' },
+      select: { id: true, callsign: true, email: true, role: true, totpEnabled: true, mfaExempt: true, createdAt: true },
+    });
+  }
+
+  /** Backs POST /k-id/operators/:id/revoke-sessions — admin force-logout. */
+  async revokeOperatorSessions(operatorId: string, revokedByOperatorId: string): Promise<void> {
+    await this.tokens.revokeAllForOperator(operatorId, 'ADMIN_REVOKED');
+    await this.blacktape.record({
+      category: 'AUTH',
+      action: 'ADMIN_REVOKED_SESSIONS',
+      actorType: 'OPERATOR',
+      actorId: revokedByOperatorId,
+      targetType: 'Operator',
+      targetId: operatorId,
+    });
+  }
+
+  /**
+   * Backs DELETE /k-id/operators/:id. Genuinely destructive (not a
+   * soft-delete/deactivate) — Operator has no isActive/deletedAt column,
+   * and adding one is a bigger decision (audit trail, re-onboarding flow)
+   * than this endpoint's scope. Documented in the blacktape entry with
+   * WHO deleted WHOM, at least.
+   */
+  async deleteOperator(operatorId: string, deletedByOperatorId: string): Promise<void> {
+    const operator = await this.prisma.operator.findUniqueOrThrow({ where: { id: operatorId } });
+    await this.prisma.operator.delete({ where: { id: operatorId } });
+    await this.blacktape.record({
+      category: 'AUTH',
+      action: 'ADMIN_DELETED_OPERATOR',
+      actorType: 'OPERATOR',
+      actorId: deletedByOperatorId,
+      targetType: 'Operator',
+      targetId: operatorId,
+      metadata: { deletedCallsign: operator.callsign },
+    });
+  }
+
   private dummyHashCache: string | null = null;
   private async dummyHash(): Promise<string> {
     // Precomputed lazily once per process — a fixed constant-time-ish target

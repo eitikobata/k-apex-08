@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Post, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
 import { KStreamService } from './k-stream.service';
 import { JwtAuthGuard } from '../k-id/guards/jwt-auth.guard';
 import { RolesGuard } from '../k-id/guards/roles.guard';
@@ -11,6 +11,11 @@ const VALID_TYPES: DebugIncidentType[] = ['LATCH', 'SPLICE', 'SHATTER', 'ROGUE_A
 @UseGuards(JwtAuthGuard)
 export class KStreamController {
   constructor(private readonly kStream: KStreamService) {}
+
+  @Get('incidents')
+  async listIncidents() {
+    return this.kStream.listIncidents();
+  }
 
   /**
    * Admin-only testing utility — forces an incident into the pipeline
