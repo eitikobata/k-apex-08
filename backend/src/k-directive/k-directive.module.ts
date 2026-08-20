@@ -7,9 +7,10 @@ import { KIdModule } from '../k-id/k-id.module';
 import { KuroIceModule } from '../kuro-ice/kuro-ice.module';
 import { RogueAiModule } from '../rogue-ai/rogue-ai.module';
 import { KBlackboxModule } from '../k-blackbox/k-blackbox.module';
+import { KSilenceModule } from '../k-silence/k-silence.module';
 
 @Module({
-  imports: [ScheduleModule.forRoot(), KIdModule, KuroIceModule, RogueAiModule, KBlackboxModule],
+  imports: [ScheduleModule.forRoot(), KIdModule, KuroIceModule, RogueAiModule, KBlackboxModule, KSilenceModule],
   controllers: [KDirectiveController],
   providers: [KDirectiveService, AutonomousModeService],
   exports: [AutonomousModeService, KDirectiveService],

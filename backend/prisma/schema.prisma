@@ -195,6 +195,13 @@ enum SilenceStatus {
   ALIVE
   RETRYING
   CONFIRMED_SILENT
+  // NEW: node's SPLICE incident was confirmed by the operator, real
+  // recovery is scheduled (nextRetryAt reused as "recoverAt" here — same
+  // sweep interval handles both retry progression and recovery timing,
+  // see KSilenceScannerService.sweep). Distinct from RESOLVED so the grid
+  // can show a "coming back online" state instead of jumping straight
+  // from silent to alive with no transition.
+  RECOVERING
   RESOLVED
 }
 

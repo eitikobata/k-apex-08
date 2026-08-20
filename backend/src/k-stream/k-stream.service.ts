@@ -4,6 +4,7 @@ import type { Redis } from 'ioredis';
 import { REDIS_CLIENT } from '../common/redis/redis.module';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { OutboxService } from '../common/outbox/outbox.service';
+import { BlacktapeService } from '../common/blacktape/blacktape.service';
 import { evaluateSlidingWindow, CorrelationConfig } from './sliding-window-correlator.util';
 import { detectRogueAiAdaptiveSignature } from './rogue-ai-detector.util';
 
@@ -48,6 +49,7 @@ export class KStreamService implements OnModuleInit {
     @Inject(REDIS_CLIENT) private readonly redis: Redis,
     private readonly prisma: PrismaService,
     private readonly outbox: OutboxService,
+    private readonly blacktape: BlacktapeService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -220,6 +222,21 @@ export class KStreamService implements OnModuleInit {
       return incident.id;
     });
 
+    // NOTE: category 'INCIDENT' existed in BlacktapeCategory but nothing in
+    // the codebase ever wrote an entry with it — the K-BLACKTAPE tab for
+    // "Incidents" was always empty, not because of a bug in reading it,
+    // but because nothing produced that data. This is the fix: every
+    // incident's creation (organic, silence-escalated, or debug-injected)
+    // now leaves a real trail here.
+    await this.blacktape.record({
+      category: 'INCIDENT',
+      action: 'INCIDENT_RAISED',
+      actorType: 'SYSTEM',
+      targetType: 'Incident',
+      targetId: incidentId,
+      metadata: { tier: params.tier, kind: params.kind },
+    });
+
     this.logger.warn(`Incident raised: tier=${params.tier} kind=${params.kind}`);
     return incidentId;
   }
@@ -236,6 +253,22 @@ export class KStreamService implements OnModuleInit {
    * clearly labeled as injected in the summary so it's never confused
    * with a genuine detection in K-BLACKBOX or Blacktape.
    */
+  /**
+   * Public entry point for K-SILENCE — lets KSilenceScannerService raise a
+   * SPLICE incident through the exact same pipeline everything else uses
+   * (K-DIRECTIVE routing, INCIDENT category blacktape entry, outbox), so
+   * "a node went silent" behaves identically to any other incident once
+   * it exists, no special-casing needed downstream.
+   */
+  async raiseNodeSilenceIncident(attemptCount: number): Promise<string> {
+    return this.raiseIncident({
+      tier: 'SPLICE',
+      kind: 'NODE_SILENCE',
+      contributingEventIds: [],
+      summary: `Node silent after ${attemptCount} retry attempts`,
+    });
+  }
+
   async debugInjectIncident(type: 'LATCH' | 'SPLICE' | 'SHATTER' | 'ROGUE_AI'): Promise<{ incidentId: string }> {
     const isRogueAi = type === 'ROGUE_AI';
     const tier: 'LATCH' | 'SPLICE' | 'SHATTER' = isRogueAi ? 'SHATTER' : type;

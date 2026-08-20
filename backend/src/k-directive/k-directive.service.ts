@@ -10,6 +10,7 @@ import { RogueAiService } from '../rogue-ai/rogue-ai.service';
 import { KuroIceService } from '../kuro-ice/kuro-ice.service';
 import { decideIncidentHandling } from './decision.util';
 import { KBlackboxService } from '../k-blackbox/k-blackbox.service';
+import { KSilenceScannerService } from '../k-silence/k-silence.service';
 
 const INCIDENTS_STREAM = 'kapex08:k-directive:incidents';
 const CONSUMER_GROUP = 'k-directive-processor';
@@ -42,6 +43,7 @@ export class KDirectiveService implements OnModuleInit {
         private readonly rogueAi: RogueAiService,
         private readonly kuroIce: KuroIceService,
         private readonly kBlackbox: KBlackboxService,
+        private readonly kSilence: KSilenceScannerService,
       ) {}
 
   async onModuleInit(): Promise<void> {
@@ -143,7 +145,23 @@ export class KDirectiveService implements OnModuleInit {
         where: { id: incidentId },
         data: { status: 'AWAITING_OPERATOR', operatorDeadlineAt: new Date(Date.now() + OPERATOR_DEADLINE_MS[incident.tier as 'LATCH' | 'SPLICE' | 'SHATTER']) },
       });
-      await this.notifyGateway('INCIDENT_AWAITING_OPERATOR', { incidentId, tier: incident.tier });
+
+      // NODE_SILENCE incidents get their originating node's codeName riding
+      // along — the console can't otherwise tell "this SPLICE is about
+      // NODE-14 specifically" apart from any other SPLICE. Looked up via
+      // the SilenceState's reverse relation rather than widening the
+      // incident payload everything else reads (kind + tier is enough for
+      // every other incident type).
+      let nodeCode: string | undefined;
+      if (incident.kind === 'NODE_SILENCE') {
+        const silenceState = await this.prisma.silenceState.findUnique({
+          where: { escalatedIncidentId: incidentId },
+          include: { node: true },
+        });
+        nodeCode = silenceState?.node.codeName;
+      }
+
+      await this.notifyGateway('INCIDENT_AWAITING_OPERATOR', { incidentId, tier: incident.tier, nodeCode });
       return;
     }
 
@@ -173,6 +191,9 @@ export class KDirectiveService implements OnModuleInit {
     });
 
     await this.prisma.incident.update({ where: { id: incidentId }, data: { status: 'RESOLVED', resolvedAt: new Date() } });
+    if (incident.kind === 'NODE_SILENCE') {
+      await this.kSilence.scheduleRecoveryForIncident(incidentId);
+    }
   }
 
   /** Manual operator confirmation for an AWAITING_OPERATOR incident (SPLICE/SHATTER). */
@@ -219,6 +240,9 @@ export class KDirectiveService implements OnModuleInit {
 
     await this.prisma.incident.update({ where: { id: incidentId }, data: { status: 'RESOLVED', resolvedAt: new Date() } });
         await this.kBlackbox.archiveResolvedIncident(incidentId);
+        if (incident.kind === 'NODE_SILENCE') {
+          await this.kSilence.scheduleRecoveryForIncident(incidentId);
+        }
       }
 
   /**
