@@ -94,6 +94,13 @@ body {
     0 0 28px rgba(0, 0, 0, 0.65);
 }
 
+/* Smaller version of panel-border's cut corner, for compact tiles like
+   NodeGrid's node squares — 14px reads fine on a whole window, way too
+   big on a ~30px tile. */
+.node-tile-clip {
+  clip-path: polygon(0 6px, 6px 0, 100% 0, 100% 100%, 0 100%);
+}
+
 ::selection {
   background: theme('colors.signal.DEFAULT');
   color: theme('colors.void');

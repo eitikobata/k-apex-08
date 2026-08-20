@@ -269,8 +269,11 @@ export const kStreamApi = {
 export interface NodeStatusDto {
   codeName: string; // "NODE-01".."NODE-24"
   sector: number;
-  status: 'ALIVE' | 'RETRYING' | 'CONFIRMED_SILENT' | 'RESOLVED';
+  status: 'ALIVE' | 'RETRYING' | 'CONFIRMED_SILENT' | 'RECOVERING' | 'RESOLVED';
   lastHeartbeatAt: string | null;
+  attemptCount: number | null; // only set while RETRYING
+  maxAttempts: number | null; // only set while RETRYING
+  recoverAt: string | null; // only set while RECOVERING
 }
 
 export const kSilenceApi = {

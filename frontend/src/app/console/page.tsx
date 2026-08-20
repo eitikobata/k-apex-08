@@ -236,14 +236,23 @@ export default function ConsolePage() {
 
     s.on(
       'INCIDENT_AWAITING_OPERATOR',
-      (payload: { incidentId: string; tier: 'LATCH' | 'SPLICE' | 'SHATTER'; rogueAi?: boolean; rogueAiIncidentId?: string }) => {
-        pushFeed(`Incident awaiting operator — tier ${payload.tier} — ${payload.incidentId}`, 'warn');
+      (payload: {
+        incidentId: string;
+        tier: 'LATCH' | 'SPLICE' | 'SHATTER';
+        rogueAi?: boolean;
+        rogueAiIncidentId?: string;
+        nodeCode?: string;
+      }) => {
+        pushFeed(
+          `Incident awaiting operator — tier ${payload.tier}${payload.nodeCode ? ` — ${payload.nodeCode}` : ''} — ${payload.incidentId}`,
+          'warn',
+        );
         bumpThreat(payload.rogueAi ? 'ROGUE_AI' : 'ACTIVE', payload.rogueAi ? ROGUE_AI_STEP_WINDOW_MS : 8_000);
 
         upsertIncident(
           payload.incidentId,
           { status: payload.rogueAi ? 'ROGUE_AI_ACTIVE' : 'AWAITING_OPERATOR' },
-          { tier: payload.tier, rogueAi: !!payload.rogueAi, rogueAiIncidentId: payload.rogueAiIncidentId },
+          { tier: payload.tier, rogueAi: !!payload.rogueAi, rogueAiIncidentId: payload.rogueAiIncidentId, nodeCode: payload.nodeCode },
         );
 
         if (payload.rogueAi && payload.rogueAiIncidentId) {
@@ -623,7 +632,7 @@ export default function ConsolePage() {
                 <div className="col-span-2 min-h-0">
                   <Panel title="K-SILENCE" className="h-full">
                     <div className="p-3 h-full">
-                      <NodeGrid accessToken={session.accessToken} />
+                      <NodeGrid accessToken={session.accessToken} socket={socket} />
                     </div>
                   </Panel>
                 </div>

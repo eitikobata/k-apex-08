@@ -9,6 +9,11 @@ export interface IncidentRecord {
   status: 'AWAITING_OPERATOR' | 'ROGUE_AI_ACTIVE' | 'RESOLVED' | 'ESCALATED';
   rogueAi: boolean;
   rogueAiIncidentId?: string;
+  // Only present for SPLICE incidents raised by K-SILENCE (kind
+  // NODE_SILENCE) — which specific node this is about. Absent for every
+  // other incident type; INCIDENT_AWAITING_OPERATOR only carries it when
+  // K-DIRECTIVE found a matching SilenceState (see the backend note there).
+  nodeCode?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -139,6 +144,9 @@ function IncidentRow({
     >
       <div className="flex items-center gap-2">
         <TierBadge tier={incident.tier} />
+        {incident.nodeCode && (
+          <span className="text-warn text-[10px] font-display tracking-wider">{incident.nodeCode}</span>
+        )}
         <span className="text-ash font-mono truncate flex-1">#{incident.id}</span>
         <StatusLabel status={incident.status} />
       </div>
