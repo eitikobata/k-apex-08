@@ -3,9 +3,10 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/lib/auth-store';
-import { kIdApi, kIdAdminApi, ApiError, OperatorSummaryDto } from '@/lib/api-client';
+import { kIdApi, kIdAdminApi, OperatorSummaryDto } from '@/lib/api-client';
 import { Panel } from '@/components/Panel';
 import { BackgroundColumns } from '@/components/BackgroundColumns';
+import { OperatorPermissionsModal } from '@/components/OperatorPermissionsModal';
 
 const ROLES = ['ADMIN', 'SENIOR_OPERATOR', 'OPERATOR', 'OBSERVER'] as const;
 
@@ -19,6 +20,7 @@ export default function AdminPage() {
   const [operators, setOperators] = useState<OperatorSummaryDto[] | null>(null);
   const [listError, setListError] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
+  const [permissionsFor, setPermissionsFor] = useState<{ id: string; callsign: string } | null>(null);
 
   useEffect(() => {
     hydrate();
@@ -43,13 +45,7 @@ export default function AdminPage() {
       const list = await kIdAdminApi.listOperators(session.accessToken);
       setOperators(list);
     } catch (err) {
-      setListError(
-        err instanceof ApiError && err.status === 404
-          ? 'Backend endpoint not deployed yet — this list will populate once GET /k-id/operators exists.'
-          : err instanceof Error
-            ? err.message
-            : 'Failed to load operators.',
-      );
+      setListError(err instanceof Error ? err.message : 'Failed to load operators.');
     }
   }
 
@@ -64,13 +60,7 @@ export default function AdminPage() {
       await kIdAdminApi.revokeOperatorSessions(session.accessToken, operatorId);
       setActionMessage(`Sessions revoked for ${operatorId}.`);
     } catch (err) {
-      setActionMessage(
-        err instanceof ApiError && err.status === 404
-          ? 'Backend endpoint not deployed yet.'
-          : err instanceof Error
-            ? err.message
-            : 'Revoke failed.',
-      );
+      setActionMessage(err instanceof Error ? err.message : 'Revoke failed.');
     }
   }
 
@@ -82,13 +72,7 @@ export default function AdminPage() {
       setActionMessage(`Operator ${operatorId} deleted.`);
       void loadOperators();
     } catch (err) {
-      setActionMessage(
-        err instanceof ApiError && err.status === 404
-          ? 'Backend endpoint not deployed yet.'
-          : err instanceof Error
-            ? err.message
-            : 'Delete failed.',
-      );
+      setActionMessage(err instanceof Error ? err.message : 'Delete failed.');
     }
   }
 
@@ -181,6 +165,12 @@ export default function AdminPage() {
                           Reset password
                         </button>
                         <button
+                          onClick={() => setPermissionsFor({ id: op.id, callsign: op.callsign })}
+                          className="border border-ash text-ash px-2 py-0.5 hover:border-ash-bright hover:text-ash-bright transition-colors"
+                        >
+                          Permissions
+                        </button>
+                        <button
                           onClick={() => handleRevoke(op.id)}
                           className="border border-warn text-warn px-2 py-0.5 hover:bg-warn hover:text-void transition-colors"
                         >
@@ -201,6 +191,15 @@ export default function AdminPage() {
           </div>
         </Panel>
       </main>
+
+      {permissionsFor && (
+        <OperatorPermissionsModal
+          accessToken={session.accessToken}
+          operatorId={permissionsFor.id}
+          operatorCallsign={permissionsFor.callsign}
+          onClose={() => setPermissionsFor(null)}
+        />
+      )}
     </div>
   );
 }

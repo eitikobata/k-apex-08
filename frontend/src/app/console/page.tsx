@@ -93,9 +93,11 @@ export default function ConsolePage() {
     setTerminalInsert({ token: Date.now(), text });
   }
 
-  // Incident records and Rogue AI state are both derived, client-side, from
-  // the same socket events the signal feed already listens to. Session
-  // scoped by construction — see honesty flags in IncidentsPanel/RogueAiPanel.
+  // Incident records and Rogue AI state are both derived from the same
+  // socket events the signal feed listens to, backfilled with history on
+  // mount via GET /k-stream/incidents (see the effect below) — so a
+  // reload doesn't lose everything, just anything that happened between
+  // page loads and wasn't yet in the last 100 the backfill fetches.
   const [incidents, setIncidents] = useState<IncidentRecord[]>([]);
   // NOTE (bugfix): this used to be a single RogueAiActive | null — with more
   // than one Rogue AI incident active at once (which the simulator can

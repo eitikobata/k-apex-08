@@ -43,7 +43,7 @@ export function BlackboxPanel({
       .catch((err) => {
         setListError(
           err instanceof ApiError && err.status === 404
-            ? 'GET /k-blackbox/cases not deployed yet — showing resolved incidents from this session instead.'
+            ? 'GET /k-blackbox/cases unreachable — showing resolved incidents from this session instead.'
             : err instanceof Error
               ? err.message
               : 'Failed to load case archive.',

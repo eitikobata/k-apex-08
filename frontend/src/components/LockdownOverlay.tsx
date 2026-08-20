@@ -1,13 +1,10 @@
 'use client';
 
-// NOTE (behavior change vs. what's live today): the current deployed banner
-// (AutonomousBanner.tsx) is pointer-events: none — it's an announcement,
-// nothing underneath is actually blocked. The mockup calls for a real
-// lockdown: everything behind goes gray AND stops responding to clicks,
-// with "Stand down" as the one working control, living inside the overlay
-// itself so there's still a way out. AutonomousBanner.tsx is left in place
-// (unused now) rather than deleted, in case the softer non-blocking version
-// is ever wanted back — this component replaces it in ConsolePage.
+// NOTE: replaces the old non-blocking AutonomousBanner (announcement
+// only, pointer-events: none, nothing underneath was actually blocked).
+// This is a real lockdown: everything behind goes gray AND stops
+// responding to clicks, with "Stand down" as the one working control,
+// living inside the overlay itself so there's still a way out.
 export function LockdownOverlay({
   onStandDown,
   busy,

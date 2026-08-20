@@ -13,9 +13,9 @@ interface AuthState {
   /**
    * Decoded `sub` claim (the operator's id). The access token has no
    * callsign — only { sub, role } (see TokenService.issueTokenPair on the
-   * backend) — so the topbar/account chip shows this truncated id, not a
-   * display name. Showing the real callsign needs a GET /k-id/me endpoint
-   * that doesn't exist yet.
+   * backend) — so this is only ever a fallback display value. AccountMenu.tsx
+   * fetches the real callsign via GET /k-id/me and prefers that; this is
+   * just what shows before that call resolves, or if it fails.
    */
   operatorId: string | null;
   setSession: (session: OperatorSession) => void;

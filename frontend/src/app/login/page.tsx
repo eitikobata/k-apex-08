@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation';
 import { kIdApi, ApiError, LoginStep1Result } from '@/lib/api-client';
 import { useAuthStore } from '@/lib/auth-store';
 import { Panel } from '@/components/Panel';
+import { BootScreen } from '@/components/BootScreen';
+import { LoadingBar } from '@/components/LoadingBar';
 
 type Stage =
   | { step: 'CREDENTIALS' }
@@ -14,6 +16,14 @@ type Stage =
 export default function LoginPage() {
   const router = useRouter();
   const setSession = useAuthStore((s) => s.setSession);
+
+  // Boot screen plays once per visit, before the login form itself exists.
+  // LoadingBar plays once auth actually succeeds, right before navigating
+  // to /console — pendingSession holds the tokens in the gap so
+  // setSession() only fires once the bar finishes, not the instant the API
+  // call resolves.
+  const [booting, setBooting] = useState(true);
+  const [pendingSession, setPendingSession] = useState<Awaited<ReturnType<typeof kIdApi.completeLoginWithTotp>> | null>(null);
 
   const [stage, setStage] = useState<Stage>({ step: 'CREDENTIALS' });
   const [callsign, setCallsign] = useState('');
@@ -42,7 +52,11 @@ export default function LoginPage() {
     setBusy(true);
     try {
       const result: LoginStep1Result = await kIdApi.login(callsign, password);
-      if (result.status === 'MFA_REQUIRED') {
+      if (result.status === 'MFA_NOT_REQUIRED') {
+        // Non-admin roles skip TOTP entirely (see k-id.service.ts) — the
+        // tokens are already here, nothing left to confirm.
+        setPendingSession(result);
+      } else if (result.status === 'MFA_REQUIRED') {
         setStage({ step: 'MFA_REQUIRED', mfaPendingToken: result.mfaPendingToken });
       } else {
         setStage({
@@ -70,13 +84,27 @@ export default function LoginPage() {
             ? await kIdApi.completeTotpSetup(stage.totpSetupToken, totpCode)
             : null;
       if (!pair) return;
-      setSession(pair);
-      router.push('/console');
+      setPendingSession(pair);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Connection to K-APEX-08 failed');
     } finally {
       setBusy(false);
     }
+  }
+
+  if (booting) {
+    return <BootScreen onDone={() => setBooting(false)} />;
+  }
+
+  if (pendingSession) {
+    return (
+      <LoadingBar
+        onDone={() => {
+          setSession(pendingSession);
+          router.push('/console');
+        }}
+      />
+    );
   }
 
   return (

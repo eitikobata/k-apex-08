@@ -29,7 +29,7 @@ export function AuditLogPanel({ accessToken }: { accessToken: string }) {
       .catch((err) => {
         setError(
           err instanceof ApiError && err.status === 404
-            ? 'GET /k-blacktape/entries not deployed yet — this log will populate once it exists.'
+            ? 'GET /k-blacktape/entries unreachable — check the backend is running.'
             : err instanceof Error
               ? err.message
               : 'Failed to load audit log.',

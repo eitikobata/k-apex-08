@@ -34,6 +34,7 @@ function authHeaders(accessToken: string): HeadersInit {
 // --- K-ID -------------------------------------------------------------
 
 export type LoginStep1Result =
+  | ({ status: 'MFA_NOT_REQUIRED' } & IssuedTokenPair)
   | { status: 'MFA_REQUIRED'; mfaPendingToken: string }
   | { status: 'MFA_SETUP_REQUIRED'; totpSetupToken: string; totpKeyUri: string };
 
@@ -120,11 +121,6 @@ export const kIdApi = {
 };
 
 // --- K-ID / Admin operator management ------------------------------------
-// NOTE (honesty flag): these three endpoints don't exist on the backend
-// yet — listOperators, revokeOperatorSessions, and deleteOperator are all
-// planned but not implemented as of this writing. They'll 404 until the
-// backend catches up. Written now so the admin page just starts working
-// the moment those land, no frontend changes needed.
 
 export interface OperatorSummaryDto {
   id: string;
@@ -132,7 +128,6 @@ export interface OperatorSummaryDto {
   email: string;
   role: string;
   totpEnabled: boolean;
-  mfaExempt: boolean;
   createdAt: string;
 }
 
@@ -162,6 +157,26 @@ export const kIdAdminApi = {
       method: 'POST',
       headers: authHeaders(accessToken),
       body: JSON.stringify({ newPassword }),
+    }),
+
+  // Granular scopes on top of role — only matters for OPERATOR/SENIOR_OPERATOR
+  // (ADMIN bypasses these checks entirely server-side, see PermissionsService).
+  listPermissions: (accessToken: string, operatorId: string) =>
+    request<{ scopes: string[] }>(`/k-id/operators/${operatorId}/permissions`, {
+      headers: authHeaders(accessToken),
+    }),
+
+  grantPermission: (accessToken: string, operatorId: string, scope: string) =>
+    request<{ status: string }>(`/k-id/operators/${operatorId}/permissions`, {
+      method: 'POST',
+      headers: authHeaders(accessToken),
+      body: JSON.stringify({ scope }),
+    }),
+
+  revokePermission: (accessToken: string, operatorId: string, scope: string) =>
+    request<{ status: string }>(`/k-id/operators/${operatorId}/permissions/${encodeURIComponent(scope)}`, {
+      method: 'DELETE',
+      headers: authHeaders(accessToken),
     }),
 };
 
@@ -224,10 +239,7 @@ export const kBlackboxApi = {
       headers: authHeaders(accessToken),
     }),
 
-  // NOTE (honesty flag): GET /k-blackbox/cases doesn't exist yet — only
-  // summarize and replay are real today (see KBlackboxController). This is
-  // written against the natural extension of that controller so BlackboxPanel
-  // just starts working the moment it lands, same pattern as kIdAdminApi above.
+  // Real (KBlackboxController).
   listCases: (accessToken: string) =>
     request<CaseFileSummaryDto[]>('/k-blackbox/cases', {
       headers: authHeaders(accessToken),
@@ -248,10 +260,8 @@ export const kBlackboxApi = {
 };
 
 // --- K-STREAM / incidents --------------------------------------------------
-// NOTE (honesty flag): no REST list endpoint exists yet. IncidentsPanel works
-// today purely from live INCIDENT_AWAITING_OPERATOR socket events accumulated
-// client-side (session-scoped, resets on reload). This function is written
-// for when GET /k-stream/incidents lands, to backfill history on page load.
+// GET /k-stream/incidents is real — used on mount in console/page.tsx to
+// backfill history on top of the live socket feed.
 export interface IncidentSummaryDto {
   id: string;
   tier: 'LATCH' | 'SPLICE' | 'SHATTER';
@@ -280,10 +290,7 @@ export const kStreamApi = {
 };
 
 // --- K-SILENCE --------------------------------------------------------------
-// NOTE (honesty flag): no REST endpoint exists yet. The 24 nodes and their
-// SilenceState already exist in the Prisma schema (NetworkNode, SilenceState)
-// but nothing exposes them over HTTP. NodeGrid.tsx calls this and falls back
-// to an "awaiting backend" tile state on a 404 instead of faking data.
+// GET /k-silence/nodes is real (KSilenceController).
 export interface NodeStatusDto {
   codeName: string; // "NODE-01".."NODE-24"
   sector: number;
@@ -302,10 +309,8 @@ export const kSilenceApi = {
 };
 
 // --- K-BLACKTAPE (audit log) -------------------------------------------------
-// NOTE (honesty flag): no REST endpoint exists yet. BlacktapeEntry rows are
-// already being written by BlacktapeService on the backend (auth events,
-// incident resolutions, Rogue AI transitions, etc.) — nothing reads them back
-// over HTTP yet. AuditLogPanel.tsx is built against this contract.
+// GET /k-blacktape/entries is real (BlacktapeController), with real cursor
+// pagination (see kBlacktapeApi.listEntries below).
 export interface BlacktapeEntryDto {
   id: string;
   category: string;

@@ -28,13 +28,11 @@ const AI_RESOLVE_ODDS: Partial<Record<IncidentRecord['tier'], number>> = {
   // escalation in severity means fewer safety nets, not just more typing.
 };
 
-// NOTE (honesty flag): this mirrors the visual language of Rogue AI's
-// countdown (RogueAiPanel). Unlike Rogue AI's stepDeadlineAt, this now
-// DOES have real backend enforcement — Incident.operatorDeadlineAt +
+// This mirrors the visual language of Rogue AI's countdown (RogueAiPanel)
+// and has real backend enforcement — Incident.operatorDeadlineAt +
 // KDirectiveService.sweepExpiredOperatorDeadlines mark the incident
 // ESCALATED server-side when this hits zero, matching what the bar shows.
-// TIER_TIMER_MS here must stay in sync with OPERATOR_DEADLINE_MS in
-// k-directive.service.ts if either changes.
+// Keep in sync with OPERATOR_DEADLINE_MS in k-directive.service.ts.
 const TIER_TIMER_MS: Record<IncidentRecord['tier'], number> = {
   LATCH: 90_000,
   SPLICE: 60_000,
