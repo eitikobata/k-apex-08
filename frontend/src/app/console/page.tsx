@@ -455,6 +455,7 @@ export default function ConsolePage() {
   if (!session) return null;
 
   const isAutonomous = !!systemState?.autonomousModeActive;
+  const isObserver = role === 'OBSERVER';
 
   return (
     <>
@@ -470,7 +471,7 @@ export default function ConsolePage() {
       {/* Real blocking lockdown — everything behind stops responding to
           clicks (pointer-events-none on the wrapper below); "Stand down"
           lives inside the overlay itself as the one way out. */}
-      {isAutonomous && <LockdownOverlay onStandDown={toggleAutonomous} busy={autonomousBusy} />}
+      {isAutonomous && <LockdownOverlay onStandDown={toggleAutonomous} busy={autonomousBusy} readOnly={isObserver} />}
 
       {/* Rogue AI auto-opens — this is the point of the mechanic, an
           operator shouldn't have to go looking for it. Positioned below the
@@ -494,7 +495,7 @@ export default function ConsolePage() {
                 </span>
               </div>
               <div className="p-4">
-                <RogueAiPanel active={active} onCopyToTerminal={copyToTerminal} />
+                <RogueAiPanel active={active} onCopyToTerminal={copyToTerminal} readOnly={isObserver} />
               </div>
             </div>
           ))}
@@ -516,7 +517,7 @@ export default function ConsolePage() {
       )}
 
       <div
-        className={`relative h-screen w-screen flex flex-col ${isAutonomous ? 'mode-autonomous pointer-events-none' : 'mode-operator'}`}
+        className={`relative h-screen w-screen flex flex-col ${isAutonomous && !isObserver ? 'mode-autonomous pointer-events-none' : isAutonomous ? 'mode-autonomous' : 'mode-operator'}`}
       >
         {/* Scoped ambient background — see the long note in
             BackgroundColumns.tsx. First child + position:relative parent +
@@ -529,6 +530,7 @@ export default function ConsolePage() {
           connected={connected}
           isAutonomous={isAutonomous}
           isAdmin={role === 'ADMIN'}
+          isObserver={isObserver}
           accessToken={session.accessToken}
           onOpenNotes={() => setNotesOpen(true)}
         />
@@ -590,7 +592,8 @@ export default function ConsolePage() {
                     </button>
                     <button
                       onClick={toggleAutonomous}
-                      disabled={autonomousBusy}
+                      disabled={autonomousBusy || isObserver}
+                      title={isObserver ? "Observer accounts can't toggle autonomous mode" : undefined}
                       className="border border-warn text-warn font-display tracking-widest uppercase text-[10px] py-1.5 hover:bg-warn hover:text-void transition-colors disabled:opacity-50"
                     >
                       {autonomousBusy ? 'Working…' : isAutonomous ? 'Stand down' : 'Go autonomous'}
@@ -625,7 +628,7 @@ export default function ConsolePage() {
                 <div className="col-span-2 min-h-0">
                   <Panel title="K-Disturbances" className="h-full">
                     <div className="h-full flex flex-col p-3">
-                      <IncidentsPanel incidents={incidents} onCopyToTerminal={copyToTerminal} onOpenCase={openCase} onAiResolved={handleAiResolved} />
+                      <IncidentsPanel incidents={incidents} onCopyToTerminal={copyToTerminal} onOpenCase={openCase} onAiResolved={handleAiResolved} readOnly={isObserver} />
                     </div>
                   </Panel>
                 </div>

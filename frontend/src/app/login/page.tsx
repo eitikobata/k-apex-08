@@ -22,6 +22,20 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  // Demo/observer autofill — reads from env, not hardcoded, so nothing
+  // sensitive lives in source. Only renders when NEXT_PUBLIC_DEMO_CALLSIGN
+  // is actually set at build time (set it in the deploy env when there's a
+  // demo account to point recruiters at; leave unset otherwise and this
+  // button just doesn't exist). Fills the fields, doesn't auto-submit —
+  // still a real click to authenticate.
+  const demoCallsign = process.env.NEXT_PUBLIC_DEMO_CALLSIGN;
+  const demoPassword = process.env.NEXT_PUBLIC_DEMO_PASSWORD;
+  function fillDemoCredentials() {
+    if (!demoCallsign || !demoPassword) return;
+    setCallsign(demoCallsign);
+    setPassword(demoPassword);
+  }
+
   async function handleCredentialsSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
@@ -86,6 +100,15 @@ export default function LoginPage() {
                 <Field label="Password" value={password} onChange={setPassword} type="password" />
                 {error && <ErrorText>{error}</ErrorText>}
                 <SubmitButton busy={busy}>Authenticate</SubmitButton>
+                {demoCallsign && demoPassword && (
+                  <button
+                    type="button"
+                    onClick={fillDemoCredentials}
+                    className="text-ash hover:text-ash-bright text-[10px] tracking-widest uppercase underline underline-offset-2"
+                  >
+                    Fill demo credentials
+                  </button>
+                )}
               </form>
             )}
 

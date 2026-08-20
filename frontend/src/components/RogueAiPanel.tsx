@@ -38,9 +38,11 @@ const STEP_WINDOW_MS = 30_000;
 export function RogueAiPanel({
   active,
   onCopyToTerminal,
+  readOnly = false,
 }: {
   active: RogueAiActive;
   onCopyToTerminal: (text: string) => void;
+  readOnly?: boolean;
 }) {
   const [now, setNow] = useState(() => Date.now());
 
@@ -95,16 +97,20 @@ export function RogueAiPanel({
       {!isBad && nextCommand && (
         <>
           <div className="bg-void border border-grid p-2.5 font-mono text-signal">
-            Type the verb first, then append the ID:
+            {readOnly ? 'Expected next command:' : 'Type the verb first, then append the ID:'}
             <br />
             <span className="bg-white/5 px-1">{`${nextCommand} //${active.rogueAiIncidentId}`}</span>
           </div>
-          <button
-            onClick={() => onCopyToTerminal(`//${active.rogueAiIncidentId}`)}
-            className="border border-danger text-danger font-display tracking-widest uppercase text-[10px] py-2 hover:bg-danger hover:text-void transition-colors"
-          >
-            Append ID to terminal
-          </button>
+          {readOnly ? (
+            <span className="text-ash text-[10px] italic">Read-only — observer accounts can&apos;t act on this</span>
+          ) : (
+            <button
+              onClick={() => onCopyToTerminal(`//${active.rogueAiIncidentId}`)}
+              className="border border-danger text-danger font-display tracking-widest uppercase text-[10px] py-2 hover:bg-danger hover:text-void transition-colors"
+            >
+              Append ID to terminal
+            </button>
+          )}
         </>
       )}
 

@@ -8,7 +8,15 @@
 // itself so there's still a way out. AutonomousBanner.tsx is left in place
 // (unused now) rather than deleted, in case the softer non-blocking version
 // is ever wanted back — this component replaces it in ConsolePage.
-export function LockdownOverlay({ onStandDown, busy }: { onStandDown: () => void; busy: boolean }) {
+export function LockdownOverlay({
+  onStandDown,
+  busy,
+  readOnly = false,
+}: {
+  onStandDown: () => void;
+  busy: boolean;
+  readOnly?: boolean;
+}) {
   return (
     <div className="autonomous-banner" style={{ pointerEvents: 'auto' }} role="alertdialog" aria-label="Autonomous mode lockdown">
       <div className="autonomous-banner-inner" style={{ pointerEvents: 'auto' }}>
@@ -20,13 +28,19 @@ export function LockdownOverlay({ onStandDown, busy }: { onStandDown: () => void
         <div className="autonomous-banner-rule" />
         <span className="autonomous-banner-caption">No operator at the helm — K-DIRECTIVE is deciding alone</span>
         <div className="autonomous-stripe autonomous-stripe-bottom" />
-        <button
-          onClick={onStandDown}
-          disabled={busy}
-          className="mt-4 border border-warn text-warn font-display tracking-widest uppercase text-xs px-6 py-2 hover:bg-warn hover:text-void transition-colors disabled:opacity-50 pointer-events-auto"
-        >
-          {busy ? 'Working…' : 'Stand down'}
-        </button>
+        {readOnly ? (
+          <span className="mt-4 text-ash text-[10px] italic">
+            Observer accounts can&apos;t stand this down — waiting on an operator.
+          </span>
+        ) : (
+          <button
+            onClick={onStandDown}
+            disabled={busy}
+            className="mt-4 border border-warn text-warn font-display tracking-widest uppercase text-xs px-6 py-2 hover:bg-warn hover:text-void transition-colors disabled:opacity-50 pointer-events-auto"
+          >
+            {busy ? 'Working…' : 'Stand down'}
+          </button>
+        )}
       </div>
     </div>
   );

@@ -56,11 +56,13 @@ export function IncidentsPanel({
   onCopyToTerminal,
   onOpenCase,
   onAiResolved,
+  readOnly = false,
 }: {
   incidents: IncidentRecord[];
   onCopyToTerminal: (text: string) => void;
   onOpenCase: (incidentId: string) => void;
   onAiResolved: (incidentId: string) => void;
+  readOnly?: boolean;
 }) {
   // Pending (needs a response) always sorts above resolved/escalated,
   // regardless of when either happened — an old unresolved incident should
@@ -86,6 +88,7 @@ export function IncidentsPanel({
             onCopyToTerminal={onCopyToTerminal}
             onOpenCase={onOpenCase}
             onAiResolved={onAiResolved}
+            readOnly={readOnly}
           />
         ))}
       </div>
@@ -98,11 +101,13 @@ function IncidentRow({
   onCopyToTerminal,
   onOpenCase,
   onAiResolved,
+  readOnly,
 }: {
   incident: IncidentRecord;
   onCopyToTerminal: (text: string) => void;
   onOpenCase: (incidentId: string) => void;
   onAiResolved: (incidentId: string) => void;
+  readOnly: boolean;
 }) {
   const [aiState, setAiState] = useState<'idle' | 'trying' | 'failed'>('idle');
   const [now, setNow] = useState(() => Date.now());
@@ -164,7 +169,7 @@ function IncidentRow({
         </div>
       )}
 
-      {actionable && (
+      {actionable && !readOnly && (
         <div className="flex items-center gap-2 flex-wrap">
           <button
             onClick={() => onCopyToTerminal(`//${incident.id}`)}
@@ -200,6 +205,10 @@ function IncidentRow({
           )}
           {aiState === 'failed' && <span className="ml-auto text-danger text-[10px]">AI failed — your call</span>}
         </div>
+      )}
+
+      {actionable && readOnly && (
+        <span className="text-ash text-[10px] italic">Read-only — observer accounts can&apos;t act on incidents</span>
       )}
 
       {(incident.status === 'RESOLVED' || incident.status === 'ESCALATED') && (

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/lib/auth-store';
 import { kIdApi, kIdAdminApi, ApiError, OperatorSummaryDto } from '@/lib/api-client';
 import { Panel } from '@/components/Panel';
+import { BackgroundColumns } from '@/components/BackgroundColumns';
 
 const ROLES = ['ADMIN', 'SENIOR_OPERATOR', 'OPERATOR', 'OBSERVER'] as const;
 
@@ -91,83 +92,116 @@ export default function AdminPage() {
     }
   }
 
+  async function handleResetPassword(operatorId: string, callsign: string) {
+    if (!session) return;
+    const newPassword = window.prompt(`New password for ${callsign} (min 8 characters):`);
+    if (!newPassword) return;
+    if (newPassword.length < 8) {
+      setActionMessage('Password too short — needs at least 8 characters. Nothing changed.');
+      return;
+    }
+    try {
+      await kIdAdminApi.resetOperatorPassword(session.accessToken, operatorId, newPassword);
+      setActionMessage(`Password reset for ${callsign}. Their sessions were revoked — they'll need to log in again.`);
+    } catch (err) {
+      setActionMessage(err instanceof Error ? err.message : 'Password reset failed.');
+    }
+  }
+
   if (!session || role !== 'ADMIN') return null;
 
   return (
-    <main className="h-screen w-screen p-3 flex flex-col gap-3">
-      <header className="flex items-center justify-between">
-        <h1 className="font-display text-sm tracking-[0.3em] text-ash-bright uppercase">
-          K-APEX-08 <span className="text-ash">{'//'} Admin panel</span>
-        </h1>
-        <a
-          href="/console"
-          className="border border-ash text-ash hover:border-ash-bright hover:text-ash-bright font-display tracking-widest uppercase text-[10px] px-2 py-1 transition-colors"
-        >
-          Back to console
-        </a>
-      </header>
+    <div className="relative h-screen w-screen flex flex-col bg-void">
+      <BackgroundColumns scoped />
+      <main className="relative flex-1 min-h-0 p-4 flex flex-col gap-4 overflow-y-auto">
+        <header className="relative bg-void flex items-center justify-between px-3 py-2.5 border-b-2 border-danger shrink-0">
+          <h1 className="font-display text-sm tracking-[0.25em] text-danger uppercase">
+            K-APEX-08 <span className="text-ash font-medium">{'//'} Admin Panel</span>
+          </h1>
+          <a
+            href="/console"
+            className="bg-void border border-ash text-ash hover:border-ash-bright hover:text-ash-bright font-display tracking-widest uppercase text-[10px] px-2.5 py-1 transition-colors"
+          >
+            Back to console
+          </a>
+        </header>
 
-      {actionMessage && (
-        <div className="panel-border bg-panel/80 px-3 py-2 text-xs text-warn">{actionMessage}</div>
-      )}
+        {actionMessage && (
+          <div className="panel-border bg-panel px-3 py-2 text-xs text-warn shrink-0">{actionMessage}</div>
+        )}
 
-      <Panel title="Create operator" className="shrink-0">
-        <CreateOperatorForm
-          accessToken={session.accessToken}
-          onCreated={() => {
-            setActionMessage('Operator created.');
-            void loadOperators();
-          }}
-        />
-      </Panel>
+        <Panel title="Create operator" className="shrink-0">
+          <CreateOperatorForm
+            accessToken={session.accessToken}
+            onCreated={() => {
+              setActionMessage('Operator created.');
+              void loadOperators();
+            }}
+          />
+        </Panel>
 
-      <Panel title="Operators" className="flex-1 min-h-0">
-        <div className="p-3 h-full overflow-y-auto text-xs">
-          {listError && <p className="text-warn mb-3">{listError}</p>}
-          {!listError && !operators && <p className="text-ash">Loading…</p>}
-          {operators && operators.length === 0 && <p className="text-ash">No operators found.</p>}
-          {operators && operators.length > 0 && (
-            <table className="w-full text-left font-mono">
-              <thead>
-                <tr className="border-b border-grid text-ash uppercase tracking-wider">
-                  <th className="py-1 pr-3">Callsign</th>
-                  <th className="py-1 pr-3">Email</th>
-                  <th className="py-1 pr-3">Role</th>
-                  <th className="py-1 pr-3">TOTP</th>
-                  <th className="py-1 pr-3">MFA exempt</th>
-                  <th className="py-1 pr-3">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {operators.map((op) => (
-                  <tr key={op.id} className="border-b border-grid/50 text-ash-bright">
-                    <td className="py-1.5 pr-3">{op.callsign}</td>
-                    <td className="py-1.5 pr-3">{op.email}</td>
-                    <td className="py-1.5 pr-3">{op.role}</td>
-                    <td className="py-1.5 pr-3">{op.totpEnabled ? 'yes' : 'no'}</td>
-                    <td className="py-1.5 pr-3">{op.mfaExempt ? 'yes' : 'no'}</td>
-                    <td className="py-1.5 pr-3 flex gap-2">
-                      <button
-                        onClick={() => handleRevoke(op.id)}
-                        className="border border-warn text-warn px-2 py-0.5 hover:bg-warn hover:text-void transition-colors"
-                      >
-                        Revoke
-                      </button>
-                      <button
-                        onClick={() => handleDelete(op.id)}
-                        className="border border-danger text-danger px-2 py-0.5 hover:bg-danger hover:text-void transition-colors"
-                      >
-                        Delete
-                      </button>
-                    </td>
+        <Panel title="Operators" className="flex-1 min-h-0">
+          <div className="p-3 h-full overflow-y-auto text-xs">
+            {listError && <p className="text-warn mb-3">{listError}</p>}
+            {!listError && !operators && <p className="text-ash">Loading…</p>}
+            {operators && operators.length === 0 && <p className="text-ash">No operators found.</p>}
+            {operators && operators.length > 0 && (
+              <table className="w-full text-left font-mono">
+                <thead>
+                  <tr className="border-b border-grid text-ash uppercase tracking-wider">
+                    <th className="py-1 pr-3">Callsign</th>
+                    <th className="py-1 pr-3">Email</th>
+                    <th className="py-1 pr-3">Role</th>
+                    <th className="py-1 pr-3">TOTP</th>
+                    <th className="py-1 pr-3">Actions</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
-      </Panel>
-    </main>
+                </thead>
+                <tbody>
+                  {operators.map((op) => (
+                    <tr key={op.id} className="border-b border-grid/50 text-ash-bright hover:bg-grid/20 transition-colors">
+                      <td className="py-1.5 pr-3">{op.callsign}</td>
+                      <td className="py-1.5 pr-3">{op.email}</td>
+                      <td className="py-1.5 pr-3">
+                        <span
+                          className={`border px-1.5 py-0.5 text-[10px] ${
+                            op.role === 'ADMIN' ? 'border-danger text-danger' : 'border-ash text-ash'
+                          }`}
+                        >
+                          {op.role}
+                        </span>
+                      </td>
+                      <td className="py-1.5 pr-3">
+                        {op.role === 'ADMIN' ? (op.totpEnabled ? 'yes' : 'pending') : '—'}
+                      </td>
+                      <td className="py-1.5 pr-3 flex gap-2">
+                        <button
+                          onClick={() => handleResetPassword(op.id, op.callsign)}
+                          className="border border-signal text-signal px-2 py-0.5 hover:bg-signal hover:text-void transition-colors"
+                        >
+                          Reset password
+                        </button>
+                        <button
+                          onClick={() => handleRevoke(op.id)}
+                          className="border border-warn text-warn px-2 py-0.5 hover:bg-warn hover:text-void transition-colors"
+                        >
+                          Revoke
+                        </button>
+                        <button
+                          onClick={() => handleDelete(op.id)}
+                          className="border border-danger text-danger px-2 py-0.5 hover:bg-danger hover:text-void transition-colors"
+                        >
+                          Delete
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </Panel>
+      </main>
+    </div>
   );
 }
 

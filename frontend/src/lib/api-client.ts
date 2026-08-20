@@ -153,6 +153,16 @@ export const kIdAdminApi = {
       method: 'DELETE',
       headers: authHeaders(accessToken),
     }),
+
+  // Admin resets any operator's password directly — no current-password
+  // check server-side (that's the whole point: recovering an account the
+  // operator themselves can't log into).
+  resetOperatorPassword: (accessToken: string, operatorId: string, newPassword: string) =>
+    request<{ status: string }>(`/k-id/operators/${operatorId}/password`, {
+      method: 'POST',
+      headers: authHeaders(accessToken),
+      body: JSON.stringify({ newPassword }),
+    }),
 };
 
 // --- K-DIRECTIVE --------------------------------------------------------
@@ -223,10 +233,18 @@ export const kBlackboxApi = {
       headers: authHeaders(accessToken),
     }),
 
-  // The real search endpoint (POST /k-blackbox/cases/search) exists but takes
-  // a precomputed embedding vector, not text — there's no server-side "embed
-  // this query" step yet. A text search box has nothing real to call until
-  // that lands, so BlackboxPanel disables the search input rather than fake it.
+  // Real now (KBlackboxController) — embeds the query server-side (same
+  // model used for case summaries) and runs it through the existing
+  // pgvector similarity search.
+  searchByText: (accessToken: string, query: string, limit = 5) =>
+    request<{ id: string; incidentId: string; aiSummary: string | null; distance: number }[]>(
+      '/k-blackbox/cases/search-by-text',
+      {
+        method: 'POST',
+        headers: authHeaders(accessToken),
+        body: JSON.stringify({ query, limit }),
+      },
+    ),
 };
 
 // --- K-STREAM / incidents --------------------------------------------------
@@ -300,9 +318,20 @@ export interface BlacktapeEntryDto {
 }
 
 export const kBlacktapeApi = {
-  listEntries: (accessToken: string, category?: string) =>
-    request<BlacktapeEntryDto[]>(
-      `/k-blacktape/entries${category ? `?category=${encodeURIComponent(category)}` : ''}`,
-      { headers: authHeaders(accessToken) },
-    ),
+  listEntries: (
+    accessToken: string,
+    params: { category?: string; before?: { createdAt: string; id: string }; limit?: number } = {},
+  ) => {
+    const qs = new URLSearchParams();
+    if (params.category) qs.set('category', params.category);
+    if (params.before) {
+      qs.set('beforeCreatedAt', params.before.createdAt);
+      qs.set('beforeId', params.before.id);
+    }
+    if (params.limit) qs.set('limit', String(params.limit));
+    const query = qs.toString();
+    return request<BlacktapeEntryDto[]>(`/k-blacktape/entries${query ? `?${query}` : ''}`, {
+      headers: authHeaders(accessToken),
+    });
+  },
 };

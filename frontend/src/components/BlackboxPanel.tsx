@@ -15,11 +15,7 @@ interface CaseRowData {
 // GET /k-blackbox/cases is real now (KBlackboxController) — falls back to
 // resolved/escalated incidents from this session only if that call fails
 // (network hiccup, deploy in progress), not because the endpoint doesn't
-// exist anymore. Summarize and Replay are real too, and work against any
-// valid incidentId regardless. The "search similar cases" box stays
-// disabled — the real search endpoint takes a precomputed embedding
-// vector, not text, and there's still no server-side "embed this query"
-// step, so it has nothing real to call.
+// exist anymore. Summarize, Replay, and text search are all real.
 export function BlackboxPanel({
   accessToken,
   sessionIncidents,
@@ -35,6 +31,10 @@ export function BlackboxPanel({
   const [summaries, setSummaries] = useState<Record<string, string>>({});
   const [busyId, setBusyId] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<{ incidentId: string; aiSummary: string | null; distance: number }[] | null>(null);
+  const [searching, setSearching] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
 
   useEffect(() => {
     kBlackboxApi
@@ -58,7 +58,17 @@ export function BlackboxPanel({
           .filter((i) => i.status === 'RESOLVED' || i.status === 'ESCALATED')
           .map((i) => ({ incidentId: i.id, tier: i.tier, createdAt: i.updatedAt }));
 
-  const selected = rows.find((r) => r.incidentId === selectedId) ?? rows[0] ?? null;
+  // Falls back to a search result if the selected id isn't in `rows` — a
+  // case can show up in search before it's in the (session-limited or
+  // 404-fallback) case list.
+  const selectedFromSearch = searchResults?.find((r) => r.incidentId === selectedId);
+  const selected: CaseRowData | null =
+    rows.find((r) => r.incidentId === selectedId) ??
+    (selectedFromSearch
+      ? { incidentId: selectedFromSearch.incidentId, aiSummary: selectedFromSearch.aiSummary, createdAt: new Date().toISOString() } // createdAt unused by the detail pane below, just satisfies CaseRowData's shape
+      : null) ??
+    (searchResults === null ? rows[0] : null) ??
+    null;
 
   async function summarize(incidentId: string) {
     setBusyId(incidentId);
@@ -75,32 +85,99 @@ export function BlackboxPanel({
     }
   }
 
+  async function runSearch() {
+    const q = searchQuery.trim();
+    if (!q) return;
+    setSearching(true);
+    setSearchError(null);
+    try {
+      const results = await kBlackboxApi.searchByText(accessToken, q, 5);
+      setSearchResults(results);
+      if (results.length === 0) setSearchError('No matches — or AI enrichment is unavailable right now (no API key / circuit open).');
+    } catch (err) {
+      setSearchError(err instanceof Error ? err.message : 'Search failed.');
+    } finally {
+      setSearching(false);
+    }
+  }
+
+  function clearSearch() {
+    setSearchQuery('');
+    setSearchResults(null);
+    setSearchError(null);
+  }
+
   return (
     <div className="grid grid-cols-[1fr_1fr] gap-4 h-full text-xs">
       <div className="flex flex-col min-h-0">
         {listError && <p className="text-warn mb-2">{listError}</p>}
-        <div className="flex-1 min-h-0 overflow-y-auto">
-          {rows.length === 0 && <p className="text-ash">No resolved cases yet this session.</p>}
-          {rows.map((r) => (
-            <button
-              key={r.incidentId}
-              onClick={() => setSelectedId(r.incidentId)}
-              className={`w-full text-left px-2 py-2 border-b border-grid hover:bg-grid/30 transition-colors ${
-                selected?.incidentId === r.incidentId ? 'bg-signal/5 border-l-2 border-l-signal' : ''
-              }`}
-            >
-              {r.tier ? <TierBadge tier={r.tier} /> : null} #{r.incidentId.slice(0, 8)}… —{' '}
-              {new Date(r.createdAt).toLocaleDateString()}
+
+        {searchResults !== null && (
+          <div className="flex items-center justify-between mb-2 shrink-0">
+            <span className="text-ash text-[10px] tracking-widest uppercase">Search results</span>
+            <button onClick={clearSearch} className="text-ash hover:text-ash-bright text-[10px]">
+              clear ✕
             </button>
-          ))}
+          </div>
+        )}
+
+        <div className="flex-1 min-h-0 overflow-y-auto">
+          {searchResults !== null ? (
+            <>
+              {searchResults.length === 0 && !searchError && <p className="text-ash">No matches.</p>}
+              {searchResults.map((r) => (
+                <button
+                  key={r.incidentId}
+                  onClick={() => setSelectedId(r.incidentId)}
+                  className={`w-full text-left px-2 py-2 border-b border-grid hover:bg-grid/30 transition-colors ${
+                    selectedId === r.incidentId ? 'bg-signal/5 border-l-2 border-l-signal' : ''
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span>#{r.incidentId.slice(0, 8)}…</span>
+                    <span className="text-ash text-[10px]">match {(1 - r.distance).toFixed(2)}</span>
+                  </div>
+                  {r.aiSummary && <p className="text-ash text-[10px] mt-0.5 line-clamp-2">{r.aiSummary}</p>}
+                </button>
+              ))}
+            </>
+          ) : (
+            <>
+              {rows.length === 0 && <p className="text-ash">No resolved cases yet this session.</p>}
+              {rows.map((r) => (
+                <button
+                  key={r.incidentId}
+                  onClick={() => setSelectedId(r.incidentId)}
+                  className={`w-full text-left px-2 py-2 border-b border-grid hover:bg-grid/30 transition-colors ${
+                    selected?.incidentId === r.incidentId ? 'bg-signal/5 border-l-2 border-l-signal' : ''
+                  }`}
+                >
+                  {r.tier ? <TierBadge tier={r.tier} /> : null} #{r.incidentId.slice(0, 8)}… —{' '}
+                  {new Date(r.createdAt).toLocaleDateString()}
+                </button>
+              ))}
+            </>
+          )}
         </div>
 
-        <div className="flex gap-2 mt-3 pt-3 border-t border-dashed border-grid">
-          <input
-            disabled
-            placeholder="Search similar cases… (needs text→embedding endpoint)"
-            className="flex-1 bg-void border border-grid px-2 py-1.5 text-ash outline-none opacity-50 cursor-not-allowed"
-          />
+        <div className="flex flex-col gap-1 mt-3 pt-3 border-t border-dashed border-grid">
+          <div className="flex gap-2">
+            <input
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && void runSearch()}
+              placeholder="Search similar cases…"
+              className="flex-1 bg-void panel-border px-2 py-1.5 text-ash-bright outline-none focus:border-signal"
+            />
+            <button
+              onClick={() => void runSearch()}
+              disabled={!searchQuery.trim() || searching}
+              className="border border-signal text-signal font-display tracking-widest uppercase text-[10px] px-3 hover:bg-signal hover:text-void transition-colors disabled:opacity-40"
+            >
+              {searching ? '…' : 'Search'}
+            </button>
+          </div>
+          {searchError && <p className="text-warn text-[10px]">{searchError}</p>}
         </div>
 
         <div className="flex gap-2 mt-2">
