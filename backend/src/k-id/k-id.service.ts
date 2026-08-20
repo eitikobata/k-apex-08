@@ -282,14 +282,16 @@ export class KIdService {
   /**
    * Backs GET /k-id/operators — the admin operators list the frontend has
    * been built against since early on (AdminPage's loadOperators). Never
-   * returns passwordHash/totpSecret.
+   * returns passwordHash/totpSecret. mfaExempt deliberately excluded — it's
+   * dead weight now that MFA is admin-only by role (see loginStep1), not a
+   * per-operator flag.
    */
   async listOperators(): Promise<
-    { id: string; callsign: string; email: string; role: string; totpEnabled: boolean; mfaExempt: boolean; createdAt: Date }[]
+    { id: string; callsign: string; email: string; role: string; totpEnabled: boolean; createdAt: Date }[]
   > {
     return this.prisma.operator.findMany({
       orderBy: { createdAt: 'asc' },
-      select: { id: true, callsign: true, email: true, role: true, totpEnabled: true, mfaExempt: true, createdAt: true },
+      select: { id: true, callsign: true, email: true, role: true, totpEnabled: true, createdAt: true },
     });
   }
 
