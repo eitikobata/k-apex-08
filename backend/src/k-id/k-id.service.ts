@@ -98,16 +98,22 @@ export class KIdService {
       metadata: { ip: ctx.ip, userAgent: ctx.userAgent },
     });
 
-    // Defense in depth: the exemption flag alone is not enough — it only
-    // takes effect for OBSERVER accounts, which cannot issue any command
-    // (see CommandService). A stray/misconfigured flag on a higher-privilege
-    // account is silently ignored, not honored.
-    if (operator.mfaExempt && operator.role === 'OBSERVER') {
+    // NOTE: MFA is admin-only by design now — every other role (OPERATOR,
+    // SENIOR_OPERATOR, OBSERVER) skips TOTP setup/verification entirely,
+    // regardless of the mfaExempt flag (kept in schema, no longer read
+    // here — this replaces the narrower "mfaExempt && role===OBSERVER"
+    // check that used to live here). Rationale is practical, not
+    // fictional: OBSERVER exists so recruiters/tech leads can look around
+    // without friction, and forcing a stranger through TOTP enrollment to
+    // see a portfolio project defeats the point. ADMIN still gets the
+    // full flow since that's the role that can delete operators, reset
+    // passwords, and force incidents.
+    if (operator.role !== 'ADMIN') {
       const fingerprint = fingerprintOf(ctx.ip, ctx.userAgent);
       const pair = await this.tokens.issuePair(operator.id, operator.role, fingerprint);
       await this.blacktape.record({
         category: 'AUTH',
-        action: 'MFA_EXEMPT_LOGIN',
+        action: 'MFA_SKIPPED_NON_ADMIN',
         actorType: 'OPERATOR',
         actorId: operator.id,
       });
@@ -220,6 +226,27 @@ export class KIdService {
       action: 'PASSWORD_CHANGED',
       actorType: 'OPERATOR',
       actorId: operatorId,
+    });
+  }
+
+  /**
+   * Admin resets ANY operator's password directly — no current-password
+   * check, since the whole point is recovering an account the operator
+   * themselves can't get into (forgot password, demo/observer account
+   * nobody remembers the password for, etc). Still revokes existing
+   * sessions and leaves an audit trail naming which admin did it.
+   */
+  async adminResetPassword(operatorId: string, newPassword: string, adminOperatorId: string): Promise<void> {
+    const newHash = await argon2.hash(newPassword, ARGON2ID_OPTS);
+    await this.prisma.operator.update({ where: { id: operatorId }, data: { passwordHash: newHash } });
+    await this.tokens.revokeAllForOperator(operatorId, 'MANUAL_LOGOUT');
+    await this.blacktape.record({
+      category: 'AUTH',
+      action: 'ADMIN_RESET_PASSWORD',
+      actorType: 'OPERATOR',
+      actorId: adminOperatorId,
+      targetType: 'Operator',
+      targetId: operatorId,
     });
   }
 

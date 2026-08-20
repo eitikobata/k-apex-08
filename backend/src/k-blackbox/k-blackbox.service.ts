@@ -95,6 +95,23 @@ export class KBlackboxService {
     );
   }
 
+  /**
+   * Backs the text search box in BlackboxPanel.tsx — was disabled since
+   * the only search primitive was findSimilarCases(embedding), and there
+   * was no server-side "turn this text into a vector" step. Now there is:
+   * embeds the query with the same model used for case summaries
+   * (AiEnrichmentService.generateEmbedding), then runs the existing
+   * pgvector similarity search. Returns an empty array (not an error) if
+   * embedding fails (no API key, circuit open) — a search box that
+   * silently finds nothing reads better than a hard failure for a
+   * degraded-but-non-critical feature.
+   */
+  async searchCasesByText(query: string, limit = 5) {
+    const embedding = await this.aiEnrichment.generateEmbedding(query);
+    if (!embedding) return [];
+    return this.findSimilarCases(embedding, limit);
+  }
+
   /** Reconstructs an incident's timeline event-by-event from K-BLACKTAPE. */
   async replayIncident(incidentId: string) {
     const entries = await this.blacktape.findByTarget('Incident', incidentId);

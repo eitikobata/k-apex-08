@@ -10,8 +10,18 @@ export class BlacktapeController {
   constructor(private readonly blacktape: BlacktapeService) {}
 
   @Get('entries')
-  async listEntries(@Query('category') category?: string) {
+  async listEntries(
+    @Query('category') category?: string,
+    @Query('beforeCreatedAt') beforeCreatedAt?: string,
+    @Query('beforeId') beforeId?: string,
+    @Query('limit') limit?: string,
+  ) {
     const normalized = category && VALID_CATEGORIES.includes(category as BlacktapeCategory) ? (category as BlacktapeCategory) : undefined;
-    return this.blacktape.listEntries(normalized);
+    const before = beforeCreatedAt && beforeId ? { createdAt: new Date(beforeCreatedAt), id: beforeId } : undefined;
+    return this.blacktape.listEntries({
+      category: normalized,
+      before,
+      limit: limit ? Number(limit) : undefined,
+    });
   }
 }

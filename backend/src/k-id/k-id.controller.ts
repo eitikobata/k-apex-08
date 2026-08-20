@@ -125,6 +125,18 @@ export class KIdController {
     return { status: 'ok' };
   }
 
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  @Post('operators/:id/password')
+  async adminResetPassword(
+    @Param('id') operatorId: string,
+    @Body('newPassword') newPassword: string,
+    @CurrentOperator() operator: AuthenticatedOperator,
+  ) {
+    await this.kId.adminResetPassword(operatorId, newPassword, operator.id);
+    return { status: 'ok' };
+  }
+
   // --- Granular permission management (ADMIN only) -----------------------
   // These sit alongside role-based access: role decides the broad strokes
   // (who can even try), a granted scope decides the fine ones (who can

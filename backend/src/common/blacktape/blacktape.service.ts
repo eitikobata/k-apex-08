@@ -65,14 +65,37 @@ export class BlacktapeService {
     });
   }
 
-  /** Backs GET /k-blacktape/entries — AuditLogPanel.tsx. */
-  async listEntries(category?: BlacktapeCategory, take = 200): Promise<
+  /**
+   * Backs GET /k-blacktape/entries — AuditLogPanel.tsx. Cursor pagination
+   * (createdAt + id, not offset) — the id tiebreak matters because
+   * multiple entries can share the same millisecond timestamp under load,
+   * and offset pagination silently skips/repeats rows when new entries
+   * are written between page fetches (this table is append-only and
+   * fast-moving, so that's not a hypothetical). Default page size 50, hard
+   * cap 200 regardless of what the client asks for.
+   */
+  async listEntries(params: {
+    category?: BlacktapeCategory;
+    before?: { createdAt: Date; id: string };
+    limit?: number;
+  }): Promise<
     { id: string; category: string; action: string; actorType: string; actorId: string | null; targetType: string | null; targetId: string | null; createdAt: Date }[]
   > {
+    const limit = Math.min(Math.max(params.limit ?? 50, 1), 200);
     return this.prisma.blacktapeEntry.findMany({
-      where: category ? { category } : undefined,
-      orderBy: { createdAt: 'desc' },
-      take,
+      where: {
+        ...(params.category ? { category: params.category } : {}),
+        ...(params.before
+          ? {
+              OR: [
+                { createdAt: { lt: params.before.createdAt } },
+                { createdAt: params.before.createdAt, id: { lt: params.before.id } },
+              ],
+            }
+          : {}),
+      },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: limit,
       select: {
         id: true,
         category: true,

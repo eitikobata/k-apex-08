@@ -30,4 +30,9 @@ export class KBlackboxController {
   async search(@Body('embedding') embedding: number[], @Body('limit') limit?: number) {
     return this.blackbox.findSimilarCases(embedding, limit);
   }
+
+  @Post('cases/search-by-text')
+  async searchByText(@Body('query') query: string, @Body('limit') limit?: number) {
+    return this.blackbox.searchCasesByText(query, limit);
+  }
 }
