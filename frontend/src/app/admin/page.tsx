@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/lib/auth-store';
-import { kIdApi, kIdAdminApi, kStreamApi, ApiError, OperatorSummaryDto } from '@/lib/api-client';
+import { kIdApi, kIdAdminApi, ApiError, OperatorSummaryDto } from '@/lib/api-client';
 import { Panel } from '@/components/Panel';
 
 const ROLES = ['ADMIN', 'SENIOR_OPERATOR', 'OPERATOR', 'OBSERVER'] as const;
@@ -110,10 +110,6 @@ export default function AdminPage() {
       {actionMessage && (
         <div className="panel-border bg-panel/80 px-3 py-2 text-xs text-warn">{actionMessage}</div>
       )}
-
-      <Panel title="Debug: force incident" className="shrink-0">
-        <DebugInjectPanel accessToken={session.accessToken} onInjected={setActionMessage} />
-      </Panel>
 
       <Panel title="Create operator" className="shrink-0">
         <CreateOperatorForm
@@ -271,58 +267,4 @@ function Field({
   );
 }
 
-const DEBUG_TYPES = ['LATCH', 'SPLICE', 'SHATTER', 'ROGUE_AI'] as const;
 
-// Testing utility only — the button, the endpoint it calls, and the whole
-// point of it is speed: SimulatorService's ambient odds (even bumped up)
-// still can't guarantee "an incident right now" for a specific tier. This
-// forces one in on demand, through the same pipeline a real detection
-// uses (see KStreamService.debugInjectIncident) — operator notification,
-// autonomous-mode handling, and Rogue AI containment all behave exactly
-// like an organic incident once it lands.
-function DebugInjectPanel({
-  accessToken,
-  onInjected,
-}: {
-  accessToken: string;
-  onInjected: (message: string) => void;
-}) {
-  const [busyType, setBusyType] = useState<(typeof DEBUG_TYPES)[number] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  async function inject(type: (typeof DEBUG_TYPES)[number]) {
-    setBusyType(type);
-    setError(null);
-    try {
-      const result = await kStreamApi.debugInject(accessToken, type);
-      onInjected(`Injected ${type} incident — #${result.incidentId.slice(0, 8)}…`);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : `Failed to inject ${type} incident.`);
-    } finally {
-      setBusyType(null);
-    }
-  }
-
-  return (
-    <div className="p-3 flex flex-wrap items-center gap-2 text-xs">
-      <span className="text-ash mr-1">Force an incident (skips waiting on the simulator):</span>
-      {DEBUG_TYPES.map((type) => (
-        <button
-          key={type}
-          onClick={() => void inject(type)}
-          disabled={busyType !== null}
-          className={`border font-display tracking-widest uppercase text-[10px] px-3 py-1.5 transition-colors disabled:opacity-40 ${
-            type === 'SHATTER' || type === 'ROGUE_AI'
-              ? 'border-danger text-danger hover:bg-danger hover:text-void'
-              : type === 'SPLICE'
-                ? 'border-warn text-warn hover:bg-warn hover:text-void'
-                : 'border-signal text-signal hover:bg-signal hover:text-void'
-          }`}
-        >
-          {busyType === type ? 'Working…' : type.replace('_', ' ')}
-        </button>
-      ))}
-      {error && <p className="text-danger w-full">{error}</p>}
-    </div>
-  );
-}

@@ -108,6 +108,10 @@ function IncidentRow({
   const [now, setNow] = useState(() => Date.now());
   const aiOdds = AI_RESOLVE_ODDS[incident.tier];
   const actionable = incident.status === 'AWAITING_OPERATOR';
+  // Rogue AI rows aren't "actionable" here (that happens in the floating
+  // overlay, not this row), but they're just as unresolved — both get the
+  // blink.
+  const unresolved = incident.status === 'AWAITING_OPERATOR' || incident.status === 'ROGUE_AI_ACTIVE';
 
   useEffect(() => {
     if (!actionable) return;
@@ -139,7 +143,7 @@ function IncidentRow({
   return (
     <div
       className={`flex flex-col gap-1.5 px-1 py-2 border-b border-grid ${
-        incident.rogueAi && incident.status !== 'RESOLVED' ? 'bg-danger/5' : ''
+        unresolved ? 'incident-row-blink' : incident.rogueAi ? 'bg-danger/5' : ''
       }`}
     >
       <div className="flex items-center gap-2">
