@@ -6,7 +6,12 @@ import { OutboxService } from '../common/outbox/outbox.service';
 
 const TICK_MS = 5000;
 const RAW_EVENTS_STREAM = 'kapex08:k-stream:raw-events';
-const HEARTBEAT_MISS_CHANCE = 0.03;
+// NOTE: bumped from 0.03 — at that rate, a node needed 3 consecutive
+// misses (tick=5s, silence threshold=15s) to actually go silent, which
+// worked out to ~24 nodes x 12 ticks/min x 0.03^3 ≈ once every ~2 hours.
+// Way too rare to ever see K-SILENCE do anything. 0.15 lands around once
+// a minute across all 24 nodes combined.
+const HEARTBEAT_MISS_CHANCE = 0.15;
 
 // Odds (per tick) that the simulator kicks off a deliberate multi-stage
 // attack sequence somewhere in the network, vs a rogue-AI incursion, vs
