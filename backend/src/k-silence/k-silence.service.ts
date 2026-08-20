@@ -91,8 +91,17 @@ export class KSilenceScannerService {
   @Interval(SWEEP_INTERVAL_MS)
   async sweep(): Promise<void> {
     const now = new Date();
+    // NOTE (bugfix): `nextRetryAt: { lte: now }` alone silently excludes
+    // rows where nextRetryAt is NULL — NULL never satisfies a `<=`
+    // comparison in SQL. Every SilenceState created by the old BullMQ
+    // code has NULL here (that field existed in the schema but the old
+    // code never wrote to it), so those rows were invisible to this sweep
+    // forever, stuck showing 0/3 exactly like before this rewrite. The
+    // `OR nextRetryAt: null` branch adopts any such row on the very next
+    // sweep instead of requiring a one-off data fix to un-stick it — also
+    // a safety net against any *future* bug that leaves nextRetryAt unset.
     const due = await this.prisma.silenceState.findMany({
-      where: { status: { in: ['RETRYING', 'RECOVERING'] }, nextRetryAt: { lte: now } },
+      where: { status: { in: ['RETRYING', 'RECOVERING'] }, OR: [{ nextRetryAt: { lte: now } }, { nextRetryAt: null }] },
       include: { node: true },
     });
 
