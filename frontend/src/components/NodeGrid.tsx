@@ -95,18 +95,18 @@ export function NodeGrid({ accessToken, socket }: { accessToken: string; socket:
   const slots = Array.from({ length: NODE_COUNT }, (_, i) => `NODE-${String(i + 1).padStart(2, '0')}`);
 
   return (
-    <div className="flex flex-col gap-3 h-full">
+    <div className="flex flex-col gap-2 h-full overflow-hidden">
       {backendReady === false && (
-        <p className="text-warn text-[10px] leading-relaxed">
+        <p className="text-warn text-[10px] leading-relaxed shrink-0">
           GET /k-silence/nodes not reachable — tiles stay dim until it responds.
         </p>
       )}
-      <div className="grid grid-cols-8 gap-2">
+      <div className="grid grid-cols-12 gap-1.5 shrink-0">
         {slots.map((codeName) => (
           <NodeTile key={codeName} codeName={codeName} node={nodes.get(codeName) ?? null} now={now} />
         ))}
       </div>
-      <div className="flex gap-4 text-[10px] text-ash mt-auto pt-2 flex-wrap">
+      <div className="flex gap-3 text-[10px] text-ash flex-wrap shrink-0">
         <Legend color="bg-signal shadow-[0_0_8px_theme(colors.signal.DEFAULT)]" label="Alive" />
         <Legend color="bg-warn shadow-[0_0_8px_theme(colors.warn.DEFAULT)]" label="Retry" />
         <Legend color="bg-signal/60 shadow-[0_0_8px_theme(colors.signal.DEFAULT)]" label="Recovering" />
