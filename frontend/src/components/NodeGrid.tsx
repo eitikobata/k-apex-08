@@ -6,11 +6,11 @@ import { kSilenceApi, NodeStatusDto } from '@/lib/api-client';
 const NODE_COUNT = 24;
 const POLL_MS = 10_000;
 
-// NOTE (honesty flag): GET /k-silence/nodes doesn't exist on the backend
-// yet — NetworkNode and SilenceState are already modeled in Prisma, but
-// nothing exposes them over HTTP. This polls the real contract and, on a
-// 404, renders all 24 fixed slots (NODE-01..24, per the simulator seed) as
-// dim/unlit dots instead of inventing fake statuses.
+// GET /k-silence/nodes is real now (KSilenceController) — takes the most
+// recent SilenceState per node, defaulting to ALIVE for a node that's
+// never gone silent. The 404 fallback below stays as a defensive default
+// in case the endpoint is ever unreachable (network hiccup, deploy in
+// progress) rather than assuming it'll always be up.
 export function NodeGrid({ accessToken }: { accessToken: string }) {
   const [nodes, setNodes] = useState<Map<string, NodeStatusDto>>(new Map());
   const [backendReady, setBackendReady] = useState<boolean | null>(null);

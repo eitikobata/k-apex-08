@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { TierBadge } from './TierBadge';
 import { ApiError, CaseFileSummaryDto, kBlackboxApi } from '@/lib/api-client';
 import type { IncidentRecord } from './IncidentsPanel';
 
@@ -11,14 +12,14 @@ interface CaseRowData {
   aiSummary?: string | null;
 }
 
-// NOTE (honesty flag): GET /k-blackbox/cases doesn't exist yet, so the
-// archive falls back to resolved/escalated incidents seen this session
-// (real IDs, same socket-driven state IncidentsPanel uses). Summarize and
-// Replay ARE real endpoints (KBlackboxController) and work against any
-// valid incidentId regardless. The "search similar cases" box from the
-// mockup is kept visually but disabled — the real search endpoint takes a
-// precomputed embedding vector, not text, and there's no server-side
-// "embed this query" step yet, so it has nothing real to call.
+// GET /k-blackbox/cases is real now (KBlackboxController) — falls back to
+// resolved/escalated incidents from this session only if that call fails
+// (network hiccup, deploy in progress), not because the endpoint doesn't
+// exist anymore. Summarize and Replay are real too, and work against any
+// valid incidentId regardless. The "search similar cases" box stays
+// disabled — the real search endpoint takes a precomputed embedding
+// vector, not text, and there's still no server-side "embed this query"
+// step, so it has nothing real to call.
 export function BlackboxPanel({
   accessToken,
   sessionIncidents,
@@ -88,7 +89,7 @@ export function BlackboxPanel({
                 selected?.incidentId === r.incidentId ? 'bg-signal/5 border-l-2 border-l-signal' : ''
               }`}
             >
-              {r.tier ? <span className="mr-2">{r.tier}</span> : null} #{r.incidentId.slice(0, 8)}… —{' '}
+              {r.tier ? <TierBadge tier={r.tier} /> : null} #{r.incidentId.slice(0, 8)}… —{' '}
               {new Date(r.createdAt).toLocaleDateString()}
             </button>
           ))}
@@ -123,7 +124,12 @@ export function BlackboxPanel({
         {!selected && <p className="text-ash">Select a case to see its detail.</p>}
         {selected && (
           <>
-            {selected.tier && <Row label="Tier" value={selected.tier} />}
+            {selected.tier && (
+              <div className="flex justify-between border-b border-grid pb-1 mb-1">
+                <span className="text-ash uppercase tracking-wider">Tier</span>
+                <TierBadge tier={selected.tier} />
+              </div>
+            )}
             <Row label="Incident" value={`#${selected.incidentId.slice(0, 8)}…`} />
             <div className="flex-1 min-h-0 overflow-y-auto text-signal leading-relaxed py-3">
               {summaries[selected.incidentId] ?? selected.aiSummary ?? 'No AI summary yet.'}

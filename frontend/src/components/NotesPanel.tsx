@@ -1,12 +1,19 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { TierBadge } from './TierBadge';
 
 interface StickyNote {
   id: string;
   text: string;
   createdAt: string;
 }
+
+const TIER_LEGEND: { tier: 'LATCH' | 'SPLICE' | 'SHATTER'; desc: string }[] = [
+  { tier: 'LATCH', desc: 'Low severity. AI-resolve has good odds — most time to react.' },
+  { tier: 'SPLICE', desc: 'Medium severity. AI-resolve is a long shot — confirm it yourself.' },
+  { tier: 'SHATTER', desc: 'High severity. No AI fallback, least time — always requires you.' },
+];
 
 const STORAGE_KEY = 'kapex08.notes';
 
@@ -68,6 +75,15 @@ export function NotesPanel() {
         Personal scratch pad — stored only in this browser (localStorage), never sent to the
         backend. Notes can&apos;t be edited once created: delete and re-add if something changed.
       </p>
+
+      <div className="flex flex-col gap-1.5 border border-grid p-2 shrink-0">
+        {TIER_LEGEND.map((row) => (
+          <div key={row.tier} className="flex items-start gap-2">
+            <TierBadge tier={row.tier} />
+            <span className="text-ash leading-snug">{row.desc}</span>
+          </div>
+        ))}
+      </div>
 
       <div className="flex gap-2 shrink-0">
         <textarea

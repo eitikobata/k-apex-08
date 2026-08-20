@@ -1,20 +1,36 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { kIdApi } from '@/lib/api-client';
 import { useAuthStore } from '@/lib/auth-store';
 import { ChangePasswordModal } from './ChangePasswordModal';
 
-// NOTE (honesty flag): the access token only carries { sub, role } — no
-// callsign (see TokenService.issueTokenPair on the backend). The chip shows
-// role + a truncated operator id instead of a display name; a real
-// callsign needs a GET /k-id/me endpoint that doesn't exist yet.
+// GET /k-id/me is real now (KIdController) — fetched once on mount and
+// cached in local state. Falls back to the truncated operator id (from the
+// access token's own {sub, role} — see auth-store.ts) if the call fails,
+// same defensive-default pattern as the other newly-wired panels.
 export function AccountMenu({ accessToken }: { accessToken: string }) {
   const router = useRouter();
   const clearSession = useAuthStore((s) => s.clearSession);
   const role = useAuthStore((s) => s.role);
   const operatorId = useAuthStore((s) => s.operatorId);
+  const [callsign, setCallsign] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    kIdApi
+      .me(accessToken)
+      .then((me) => {
+        if (!cancelled) setCallsign(me.callsign);
+      })
+      .catch(() => {
+        // Silent — the id-based fallback below covers it.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [accessToken]);
 
   const [open, setOpen] = useState(false);
   const [showPasswordModal, setShowPasswordModal] = useState(false);
@@ -64,7 +80,7 @@ export function AccountMenu({ accessToken }: { accessToken: string }) {
         onClick={() => setOpen((v) => !v)}
         className="bg-void flex items-center gap-2 border border-grid hover:border-ash px-2.5 py-1 transition-colors"
       >
-        <span className="text-ash-bright text-[11px]">{operatorId ? `#${operatorId.slice(0, 8)}…` : '—'}</span>
+        <span className="text-ash-bright text-[11px]">{callsign ?? (operatorId ? `#${operatorId.slice(0, 8)}…` : '—')}</span>
         <span className="text-danger text-[10px] tracking-wider">{role ?? '—'}</span>
       </button>
 

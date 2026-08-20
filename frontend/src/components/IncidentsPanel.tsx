@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { TierBadge } from './TierBadge';
 
 export interface IncidentRecord {
   id: string;
@@ -201,19 +202,6 @@ function IncidentRow({
   );
 }
 
-function TierBadge({ tier }: { tier: IncidentRecord['tier'] }) {
-  const cls =
-    tier === 'SHATTER'
-      ? 'text-danger border-danger bg-danger/10'
-      : tier === 'SPLICE'
-        ? 'text-warn border-warn'
-        : 'text-signal border-signal';
-  return (
-    <span className={`inline-block font-display text-[10px] tracking-wider uppercase border px-1.5 py-0.5 ${cls}`}>
-      {tier}
-    </span>
-  );
-}
 
 function StatusLabel({ status }: { status: IncidentRecord['status'] }) {
   const map: Record<IncidentRecord['status'], string> = {

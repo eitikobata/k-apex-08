@@ -108,6 +108,15 @@ export const kIdApi = {
       headers: authHeaders(accessToken),
       body: JSON.stringify({ response, deviceLabel }),
     }),
+
+  // Real endpoint (KIdController) — deliberately minimal (callsign + role
+  // only), matching what was agreed. The access token itself only ever
+  // carried {sub, role}, which is why AccountMenu used to show a
+  // truncated operator id instead of a name.
+  me: (accessToken: string) =>
+    request<{ callsign: string; role: string }>('/k-id/me', {
+      headers: authHeaders(accessToken),
+    }),
 };
 
 // --- K-ID / Admin operator management ------------------------------------

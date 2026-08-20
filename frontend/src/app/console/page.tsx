@@ -45,6 +45,26 @@ const DEBUG_INJECT_TYPES = ['LATCH', 'SPLICE', 'SHATTER', 'ROGUE_AI'] as const;
 
 let feedIdCounter = 0;
 
+// Backend's IncidentStatus enum has more states than the frontend's
+// operator-facing IncidentRecord needs to distinguish (PENDING_CORRELATION
+// is filtered out entirely before this runs — see the backfill effect).
+// AUTO_RESOLVING is a brief in-flight state on its way to RESOLVED; close
+// enough for a history list. ROGUE_AI_SPREAD is a bad outcome, grouped
+// with ESCALATED rather than given its own frontend status.
+function mapHistoryStatus(status: string): IncidentRecord['status'] {
+  switch (status) {
+    case 'AWAITING_OPERATOR':
+      return 'AWAITING_OPERATOR';
+    case 'ROGUE_AI_ACTIVE':
+      return 'ROGUE_AI_ACTIVE';
+    case 'ESCALATED':
+    case 'ROGUE_AI_SPREAD':
+      return 'ESCALATED';
+    default:
+      return 'RESOLVED';
+  }
+}
+
 export default function ConsolePage() {
   const router = useRouter();
   const hydrate = useAuthStore((s) => s.hydrate);
@@ -92,6 +112,43 @@ export default function ConsolePage() {
   useEffect(() => {
     useThreatStore.getState().setRogueAiActive(rogueAiList.length > 0);
   }, [rogueAiList]);
+
+  // History backfill — GET /k-stream/incidents is real now (KStreamController).
+  // Without this, incidents only ever existed for whatever the socket saw
+  // since the tab opened; a reload wiped everything. Runs once per session,
+  // merges anything not already tracked (never overwrites a live-tracked
+  // incident with a possibly-stale snapshot from this one-off fetch).
+  useEffect(() => {
+    if (!session) return;
+    let cancelled = false;
+    kStreamApi
+      .listIncidents(session.accessToken)
+      .then((history) => {
+        if (cancelled) return;
+        setIncidents((prev) => {
+          const known = new Set(prev.map((i) => i.id));
+          const backfilled = history
+            .filter((h) => !known.has(h.id) && h.status !== 'PENDING_CORRELATION')
+            .map((h) => ({
+              id: h.id,
+              tier: h.tier,
+              status: mapHistoryStatus(h.status),
+              rogueAi: h.kind === 'ROGUE_AI_SIGNATURE',
+              createdAt: h.createdAt,
+              updatedAt: h.resolvedAt ?? h.createdAt,
+            }));
+          return [...prev, ...backfilled];
+        });
+      })
+      .catch(() => {
+        // Silent — the console still works from live socket events alone,
+        // this is only a "remember what happened before I opened the tab"
+        // convenience.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [session]);
 
   useEffect(() => {
     hydrate();

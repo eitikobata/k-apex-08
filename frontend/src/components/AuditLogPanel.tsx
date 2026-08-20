@@ -5,11 +5,8 @@ import { ApiError, BlacktapeEntryDto, kBlacktapeApi } from '@/lib/api-client';
 
 const CATEGORIES = ['ALL', 'AUTH', 'INCIDENT', 'KURO_ICE', 'K_SILENCE', 'K_DIRECTIVE', 'ROGUE_AI'] as const;
 
-// NOTE (honesty flag): no REST endpoint reads BlacktapeEntry rows yet.
-// BlacktapeService already writes them on the backend (auth events,
-// resolutions, Rogue AI transitions, KURO-ICE actions) — this panel is
-// wired against the natural GET /k-blacktape/entries contract so it starts
-// working the moment that lands, same pattern as the admin operators list.
+// GET /k-blacktape/entries is real now (BlacktapeController) — capped at
+// 200 rows server-side, most recent first, optional category filter.
 export function AuditLogPanel({ accessToken }: { accessToken: string }) {
   const [category, setCategory] = useState<(typeof CATEGORIES)[number]>('ALL');
   const [entries, setEntries] = useState<BlacktapeEntryDto[] | null>(null);
