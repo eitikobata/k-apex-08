@@ -1,0 +1,28 @@
+# Local-dev-only infra — never deployed. Production runs against the same
+# shared Postgres/Redis instances every other project in this portfolio
+# uses (dedicated schema + key prefix each, not a dedicated process).
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: kapex08
+      POSTGRES_PASSWORD: kapex08
+      POSTGRES_DB: kapex08
+    ports:
+      - '5432:5432'
+    volumes:
+      - kapex08_postgres_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --requirepass change-me-locally-too
+    ports:
+      - '6379:6379'
+    volumes:
+      - kapex08_redis_data:/data
+
+volumes:
+  kapex08_postgres_data:
+  kapex08_redis_data:
