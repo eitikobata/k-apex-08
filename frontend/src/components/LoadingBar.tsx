@@ -1,8 +1,9 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useAudioStore } from '@/lib/audio-store';
 
-const DURATION_MS = 3800;
+const DURATION_MS = 2560; // matches loading-bar.mp3's real length exactly
 
 const FLAVOR_LINES = [
   'ALLOC 0x01 + DECOMPRESS MEM/DIR',
@@ -12,13 +13,20 @@ const FLAVOR_LINES = [
 ];
 
 /**
- * Post-login loading bar — plays once, ~3.5-4s, then calls onDone (the
- * caller navigates to /console after). Same audio-hook pattern as
- * BootScreen.tsx: accepts an optional audioSrc, currently unset.
+ * Post-login loading bar — plays once, then calls onDone (the caller
+ * navigates to /console after). Title says "LINKING CONSOLE" rather than
+ * reusing BootScreen's "SYSTEM BOOT" — this isn't the system starting up,
+ * it's this operator's session attaching to it, so it gets its own label.
  */
-export function LoadingBar({ onDone, audioSrc }: { onDone: () => void; audioSrc?: string }) {
+export function LoadingBar({ onDone }: { onDone: () => void }) {
   const [pct, setPct] = useState(0);
   const [lineIndex, setLineIndex] = useState(0);
+  const muted = useAudioStore((s) => s.muted);
+  const hydrate = useAudioStore((s) => s.hydrate);
+
+  useEffect(() => {
+    hydrate();
+  }, [hydrate]);
 
   useEffect(() => {
     const start = Date.now();
@@ -41,7 +49,7 @@ export function LoadingBar({ onDone, audioSrc }: { onDone: () => void; audioSrc?
   return (
     <div className="fixed inset-0 z-[900] bg-void flex flex-col items-center justify-center gap-3 px-6">
       <div className="node-tile-clip border-2 border-danger px-6 py-2 bg-void mb-2">
-        <span className="font-display text-base tracking-[0.3em] text-danger uppercase">System reboot</span>
+        <span className="font-display text-base tracking-[0.3em] text-danger uppercase">Linking console</span>
       </div>
 
       <div className="w-full max-w-md h-3 bg-grid overflow-hidden">
@@ -56,7 +64,7 @@ export function LoadingBar({ onDone, audioSrc }: { onDone: () => void; audioSrc?
         <span className="text-danger">{pct}%</span>
       </div>
 
-      {audioSrc && <audio src={audioSrc} autoPlay />}
+      {!muted && <audio src="/audio/loading-bar.mp3" autoPlay />}
     </div>
   );
 }

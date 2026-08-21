@@ -2,7 +2,9 @@
 
 import { useEffect, useState } from 'react';
 import { TierBadge } from './TierBadge';
+import { TypewriterText } from './TypewriterText';
 import { ApiError, CaseFileSummaryDto, kBlackboxApi } from '@/lib/api-client';
+import { playSound } from '@/lib/sound-effects';
 import type { IncidentRecord } from './IncidentsPanel';
 
 interface CaseRowData {
@@ -209,18 +211,33 @@ export function BlackboxPanel({
             )}
             <Row label="Incident" value={`#${selected.incidentId.slice(0, 8)}…`} />
             <div className="flex-1 min-h-0 overflow-y-auto text-signal leading-relaxed py-3">
-              {summaries[selected.incidentId] ?? selected.aiSummary ?? 'No AI summary yet.'}
+              {(() => {
+                const summaryText = summaries[selected.incidentId] ?? selected.aiSummary;
+                return summaryText ? (
+                  <TypewriterText key={`${selected.incidentId}:${summaryText}`} text={summaryText} />
+                ) : (
+                  <span className="text-ash">No AI summary yet.</span>
+                );
+              })()}
             </div>
             <div className="flex gap-2 shrink-0">
               <button
-                onClick={() => summarize(selected.incidentId)}
+                onClick={() => {
+                  playSound('select');
+                  summarize(selected.incidentId);
+                }}
+                onMouseEnter={() => playSound('hover')}
                 disabled={busyId === selected.incidentId}
                 className="border border-signal text-signal font-display tracking-widest uppercase text-[10px] px-3 py-1.5 hover:bg-signal hover:text-void transition-colors disabled:opacity-40"
               >
                 {busyId === selected.incidentId ? 'Working…' : 'Summarize'}
               </button>
               <button
-                onClick={() => onOpenReplay(selected.incidentId)}
+                onClick={() => {
+                  playSound('select');
+                  onOpenReplay(selected.incidentId);
+                }}
+                onMouseEnter={() => playSound('hover')}
                 className="border border-ash text-ash font-display tracking-widest uppercase text-[10px] px-3 py-1.5 hover:border-ash-bright hover:text-ash-bright transition-colors"
               >
                 Open replay

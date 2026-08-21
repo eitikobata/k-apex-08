@@ -20,6 +20,7 @@ import { BlackboxPanel } from '@/components/BlackboxPanel';
 import { ReplayPanel } from '@/components/ReplayPanel';
 import { AuditLogPanel } from '@/components/AuditLogPanel';
 import { useThreatStore } from '@/lib/threat-store';
+import { playSound } from '@/lib/sound-effects';
 import { BackgroundColumns } from '@/components/BackgroundColumns';
 
 // xterm.js references `self` at module-eval time, which doesn't exist
@@ -250,6 +251,7 @@ export default function ConsolePage() {
           'warn',
         );
         bumpThreat(payload.rogueAi ? 'ROGUE_AI' : 'ACTIVE', payload.rogueAi ? ROGUE_AI_STEP_WINDOW_MS : 8_000);
+        playSound(payload.rogueAi ? 'alert-rogue-ai' : (`alert-${payload.tier.toLowerCase()}` as 'alert-latch' | 'alert-splice' | 'alert-shatter'));
 
         upsertIncident(
           payload.incidentId,
@@ -547,7 +549,11 @@ export default function ConsolePage() {
           ).map(([key, label]) => (
             <button
               key={key}
-              onClick={() => setView(key)}
+              onClick={() => {
+                playSound('select');
+                setView(key);
+              }}
+              onMouseEnter={() => playSound('hover')}
               className={`bg-void font-display tracking-widest uppercase px-3 py-1.5 border transition-colors ${
                 view === key
                   ? 'border-danger text-danger'
@@ -567,7 +573,11 @@ export default function ConsolePage() {
               {DEBUG_INJECT_TYPES.map((type) => (
                 <button
                   key={type}
-                  onClick={() => void debugInject(type)}
+                  onClick={() => {
+                    playSound('select');
+                    void debugInject(type);
+                  }}
+                  onMouseEnter={() => playSound('hover')}
                   disabled={debugBusyType !== null}
                   className="bg-void border border-ash text-ash hover:border-ash-bright hover:text-ash-bright font-display tracking-widest uppercase text-[9px] px-2 py-1 transition-colors disabled:opacity-40"
                 >
@@ -587,13 +597,21 @@ export default function ConsolePage() {
                     <Row label="Autonomous mode" value={isAutonomous ? 'ACTIVE' : 'STANDBY'} />
                     <Row label="Origin" value={systemState?.activatedOrigin ?? '—'} />
                     <button
-                      onClick={() => sendHeartbeat()}
+                      onClick={() => {
+                        playSound('select');
+                        sendHeartbeat();
+                      }}
+                      onMouseEnter={() => playSound('hover')}
                       className="mt-2 border border-signal text-signal font-display tracking-widest uppercase text-[10px] py-1.5 hover:bg-signal hover:text-void transition-colors"
                     >
                       Send heartbeat
                     </button>
                     <button
-                      onClick={toggleAutonomous}
+                      onClick={() => {
+                        playSound('select');
+                        toggleAutonomous();
+                      }}
+                      onMouseEnter={() => playSound('hover')}
                       disabled={autonomousBusy || isObserver}
                       title={isObserver ? "Observer accounts can't toggle autonomous mode" : undefined}
                       className="border border-warn text-warn font-display tracking-widest uppercase text-[10px] py-1.5 hover:bg-warn hover:text-void transition-colors disabled:opacity-50"

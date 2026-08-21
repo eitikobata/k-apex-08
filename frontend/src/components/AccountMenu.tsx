@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { kIdApi } from '@/lib/api-client';
 import { useAuthStore } from '@/lib/auth-store';
 import { ChangePasswordModal } from './ChangePasswordModal';
+import { playSound } from '@/lib/sound-effects';
 
 // GET /k-id/me is real now (KIdController) — fetched once on mount and
 // cached in local state. Falls back to the truncated operator id (from the
@@ -77,7 +78,11 @@ export function AccountMenu({ accessToken }: { accessToken: string }) {
   return (
     <div className="relative">
       <button
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => {
+          playSound('select');
+          setOpen((v) => !v);
+        }}
+        onMouseEnter={() => playSound('hover')}
         className="bg-void flex items-center gap-2 border border-grid hover:border-ash px-2.5 py-1 transition-colors"
       >
         <span className="text-ash-bright text-[11px]">{callsign ?? (operatorId ? `#${operatorId.slice(0, 8)}…` : '—')}</span>
@@ -128,7 +133,11 @@ function MenuItem({
 }) {
   return (
     <button
-      onClick={onClick}
+      onClick={() => {
+        playSound('select');
+        onClick();
+      }}
+      onMouseEnter={() => playSound('hover')}
       disabled={disabled}
       className={`w-full text-left px-3 py-2 border-b border-grid last:border-b-0 hover:bg-grid/40 transition-colors disabled:opacity-40 ${
         danger ? 'text-danger' : 'text-ash-bright'

@@ -1,6 +1,7 @@
 'use client';
 
 import { AccountMenu } from './AccountMenu';
+import { playSound } from '@/lib/sound-effects';
 
 export function TopBar({
   connected,
@@ -38,7 +39,11 @@ export function TopBar({
           </span>
         )}
         <button
-          onClick={onOpenNotes}
+          onClick={() => {
+            playSound('select');
+            onOpenNotes();
+          }}
+          onMouseEnter={() => playSound('hover')}
           className="bg-void border border-ash text-ash hover:border-ash-bright hover:text-ash-bright font-display tracking-widest uppercase text-[10px] px-2.5 py-1 transition-colors"
         >
           Notes
@@ -46,6 +51,8 @@ export function TopBar({
         {isAdmin && (
           <a
             href="/admin"
+            onClick={() => playSound('nav')}
+            onMouseEnter={() => playSound('hover')}
             className="bg-void border border-ash text-ash hover:border-ash-bright hover:text-ash-bright font-display tracking-widest uppercase text-[10px] px-2.5 py-1 transition-colors"
           >
             Admin panel

@@ -2,6 +2,8 @@ import type { Metadata } from 'next';
 import { Rajdhani, JetBrains_Mono } from 'next/font/google';
 import './globals.css';
 import { BackgroundColumns } from '@/components/BackgroundColumns';
+import { AmbientAudioPlayer } from '@/components/AmbientAudioPlayer';
+import { MuteButton } from '@/components/MuteButton';
 
 const rajdhani = Rajdhani({
   subsets: ['latin'],
@@ -27,6 +29,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en" className={`${rajdhani.variable} ${jetbrainsMono.variable}`}>
       <body>
         <BackgroundColumns />
+        <AmbientAudioPlayer />
+        <MuteButton />
         {children}
         <div className="grain-layer" aria-hidden="true" />
         <div className="crt-layer" aria-hidden="true" />

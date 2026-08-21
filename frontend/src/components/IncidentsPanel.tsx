@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { TierBadge } from './TierBadge';
+import { playSound } from '@/lib/sound-effects';
 
 export interface IncidentRecord {
   id: string;
@@ -170,7 +171,11 @@ function IncidentRow({
       {actionable && !readOnly && (
         <div className="flex items-center gap-2 flex-wrap">
           <button
-            onClick={() => onCopyToTerminal(`//${incident.id}`)}
+            onClick={() => {
+              playSound('select');
+              onCopyToTerminal(`//${incident.id}`);
+            }}
+            onMouseEnter={() => playSound('hover')}
             className={`border font-display tracking-widest uppercase text-[10px] px-2.5 py-1 transition-colors ${
               incident.tier === 'SHATTER'
                 ? 'border-danger text-danger hover:bg-danger hover:text-void'
@@ -190,7 +195,11 @@ function IncidentRow({
 
           {aiOdds !== undefined && aiState === 'idle' && (
             <button
-              onClick={tryAiResolve}
+              onClick={() => {
+                playSound('select');
+                tryAiResolve();
+              }}
+              onMouseEnter={() => playSound('hover')}
               className="border border-ash text-ash font-display tracking-widest uppercase text-[10px] px-2.5 py-1 hover:border-ash-bright hover:text-ash-bright transition-colors ml-auto"
             >
               AI resolves
@@ -211,7 +220,11 @@ function IncidentRow({
 
       {(incident.status === 'RESOLVED' || incident.status === 'ESCALATED') && (
         <button
-          onClick={() => onOpenCase(incident.id)}
+          onClick={() => {
+            playSound('select');
+            onOpenCase(incident.id);
+          }}
+          onMouseEnter={() => playSound('hover')}
           className="self-start border border-ash text-ash text-[10px] px-2 py-0.5 hover:border-ash-bright hover:text-ash-bright transition-colors"
         >
           View in K-BLACKBOX

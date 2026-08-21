@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { TierBadge } from './TierBadge';
+import { playSound } from '@/lib/sound-effects';
 
 interface StickyNote {
   id: string;
@@ -97,7 +98,11 @@ export function NotesPanel() {
           className="flex-1 bg-void panel-border px-2 py-1.5 text-ash-bright outline-none focus:border-signal resize-none"
         />
         <button
-          onClick={addNote}
+          onClick={() => {
+            playSound('select');
+            addNote();
+          }}
+          onMouseEnter={() => playSound('hover')}
           disabled={!draft.trim()}
           className="border border-signal text-signal font-display tracking-widest uppercase text-[10px] px-3 hover:bg-signal hover:text-void transition-colors disabled:opacity-40 shrink-0"
         >
@@ -116,7 +121,11 @@ export function NotesPanel() {
             <div className="flex items-center justify-between text-[10px] text-ash">
               <span>{new Date(note.createdAt).toLocaleString()}</span>
               <button
-                onClick={() => deleteNote(note.id)}
+                onClick={() => {
+                  playSound('select');
+                  deleteNote(note.id);
+                }}
+                onMouseEnter={() => playSound('hover')}
                 className="text-danger hover:underline"
               >
                 delete

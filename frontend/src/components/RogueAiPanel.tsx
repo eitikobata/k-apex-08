@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { playSound } from '@/lib/sound-effects';
 
 export interface RogueAiActive {
   rogueAiIncidentId: string;
@@ -105,7 +106,11 @@ export function RogueAiPanel({
             <span className="text-ash text-[10px] italic">Read-only — observer accounts can&apos;t act on this</span>
           ) : (
             <button
-              onClick={() => onCopyToTerminal(`//${active.rogueAiIncidentId}`)}
+              onClick={() => {
+                playSound('select');
+                onCopyToTerminal(`//${active.rogueAiIncidentId}`);
+              }}
+              onMouseEnter={() => playSound('hover')}
               className="border border-danger text-danger font-display tracking-widest uppercase text-[10px] py-2 hover:bg-danger hover:text-void transition-colors"
             >
               Append ID to terminal

@@ -7,6 +7,7 @@ import { kIdApi, kIdAdminApi, OperatorSummaryDto } from '@/lib/api-client';
 import { Panel } from '@/components/Panel';
 import { BackgroundColumns } from '@/components/BackgroundColumns';
 import { OperatorPermissionsModal } from '@/components/OperatorPermissionsModal';
+import { playSound } from '@/lib/sound-effects';
 
 const ROLES = ['ADMIN', 'SENIOR_OPERATOR', 'OPERATOR', 'OBSERVER'] as const;
 
@@ -104,6 +105,8 @@ export default function AdminPage() {
           </h1>
           <a
             href="/console"
+            onClick={() => playSound('nav')}
+            onMouseEnter={() => playSound('hover')}
             className="bg-void border border-ash text-ash hover:border-ash-bright hover:text-ash-bright font-display tracking-widest uppercase text-[10px] px-2.5 py-1 transition-colors"
           >
             Back to console
@@ -159,25 +162,41 @@ export default function AdminPage() {
                       </td>
                       <td className="py-1.5 pr-3 flex gap-2">
                         <button
-                          onClick={() => handleResetPassword(op.id, op.callsign)}
+                          onClick={() => {
+                            playSound('select');
+                            handleResetPassword(op.id, op.callsign);
+                          }}
+                          onMouseEnter={() => playSound('hover')}
                           className="border border-signal text-signal px-2 py-0.5 hover:bg-signal hover:text-void transition-colors"
                         >
                           Reset password
                         </button>
                         <button
-                          onClick={() => setPermissionsFor({ id: op.id, callsign: op.callsign })}
+                          onClick={() => {
+                            playSound('select');
+                            setPermissionsFor({ id: op.id, callsign: op.callsign });
+                          }}
+                          onMouseEnter={() => playSound('hover')}
                           className="border border-ash text-ash px-2 py-0.5 hover:border-ash-bright hover:text-ash-bright transition-colors"
                         >
                           Permissions
                         </button>
                         <button
-                          onClick={() => handleRevoke(op.id)}
+                          onClick={() => {
+                            playSound('select');
+                            handleRevoke(op.id);
+                          }}
+                          onMouseEnter={() => playSound('hover')}
                           className="border border-warn text-warn px-2 py-0.5 hover:bg-warn hover:text-void transition-colors"
                         >
                           Revoke
                         </button>
                         <button
-                          onClick={() => handleDelete(op.id)}
+                          onClick={() => {
+                            playSound('select');
+                            handleDelete(op.id);
+                          }}
+                          onMouseEnter={() => playSound('hover')}
                           className="border border-danger text-danger px-2 py-0.5 hover:bg-danger hover:text-void transition-colors"
                         >
                           Delete
@@ -221,6 +240,7 @@ function CreateOperatorForm({
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    playSound('select');
     setError(null);
     setResult(null);
     setBusy(true);
@@ -260,6 +280,7 @@ function CreateOperatorForm({
       <button
         type="submit"
         disabled={busy}
+        onMouseEnter={() => playSound('hover')}
         className="border border-signal text-signal font-display tracking-widest uppercase text-[10px] px-3 py-1.5 hover:bg-signal hover:text-void transition-colors disabled:opacity-50"
       >
         {busy ? 'Creating…' : 'Create'}
