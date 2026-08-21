@@ -99,8 +99,28 @@ export class SimulatorService implements OnModuleInit {
     }
     if (nodes.length === 0) return;
 
+    // NOTE: nodes currently mid-retry (an active K-SILENCE SilenceState)
+    // are excluded from the ambient heartbeat touch below. Previously
+    // every node got touched every tick regardless of SilenceState, which
+    // meant a "silent" node had ~98% odds of being cured by ambient noise
+    // before the very first retry check (10s) even ran — real production
+    // data showed every single SilenceState resolving at attemptCount=1,
+    // the 30s/90s backoff steps were unreachable in practice. Recovery
+    // while RETRYING is now decided ONLY by KSilenceRetryProcessor's
+    // RECOVERY_CHANCE_PER_ATTEMPT roll at each real checkpoint.
+    const activeSilenceNodeIds = new Set(
+      (
+        await this.prisma.silenceState.findMany({
+          where: { status: { in: ['RETRYING', 'CONFIRMED_SILENT', 'RECOVERING'] } },
+          select: { nodeId: true },
+        })
+      ).map((s: { nodeId: string }) => s.nodeId),
+    );
+
     for (const node of nodes) {
-      await this.maybeTouchHeartbeat(node.id);
+      if (!activeSilenceNodeIds.has(node.id)) {
+        await this.maybeTouchHeartbeat(node.id);
+      }
       await this.maybeEmitNoiseOrAnomaly(node.id, node.baselineNoiseRate, node.severityBias);
     }
 
