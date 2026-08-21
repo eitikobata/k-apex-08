@@ -49,7 +49,8 @@ export class KIdService {
       },
     });
     const totpSecret = this.totp.generateSecret();
-    await this.prisma.operator.update({ where: { id: operator.id }, data: { totpSecret } });
+    const encryptedSecret = this.totp.encryptSecret(totpSecret);
+    await this.prisma.operator.update({ where: { id: operator.id }, data: { totpSecret: encryptedSecret } });
     return { operatorId: operator.id, totpKeyUri: this.totp.keyUri(dto.email, totpSecret) };
   }
 
@@ -127,7 +128,7 @@ export class KIdService {
         { sub: operator.id, type: 'totp_setup_pending' },
         { expiresIn: '10m' },
       );
-      const totpKeyUri = operator.totpSecret ? this.totp.keyUri(operator.email, operator.totpSecret) : '';
+      const totpKeyUri = operator.totpSecret ? this.totp.keyUri(operator.email, this.totp.decryptSecret(operator.totpSecret)) : '';
       return { status: 'MFA_SETUP_REQUIRED', totpSetupToken, totpKeyUri };
     }
 
@@ -155,7 +156,7 @@ export class KIdService {
       throw new UnauthorizedException('TOTP not enrolled for this operator');
     }
 
-    const valid = this.totp.verify(totpCode, operator.totpSecret);
+    const valid = this.totp.verify(totpCode, this.totp.decryptSecret(operator.totpSecret));
     if (!valid) {
       await this.rateLimit.registerFailure(operator.id);
       await this.blacktape.record({
@@ -204,7 +205,7 @@ export class KIdService {
     if (!operator.totpSecret) {
       throw new UnauthorizedException('No TOTP secret provisioned — call registerOperator first');
     }
-    const valid = this.totp.verify(totpCode, operator.totpSecret);
+    const valid = this.totp.verify(totpCode, this.totp.decryptSecret(operator.totpSecret));
     if (!valid) {
       throw new UnauthorizedException('Invalid TOTP code — enrollment not confirmed');
     }

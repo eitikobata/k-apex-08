@@ -37,7 +37,7 @@ model Operator {
   permissions OperatorPermission[]
 
   // MFA
-  totpSecret      String? // encrypted at rest in a real deploy; stored plain here for hobby scope, see README
+  totpSecret      String? // AES-256-GCM encrypted at rest — see TotpService.encryptSecret/decryptSecret. Format: base64(iv):base64(authTag):base64(ciphertext)
   totpEnabled     Boolean @default(false)
   mfaExempt       Boolean @default(false)
   webauthnDevices WebauthnCredential[]

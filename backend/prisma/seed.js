@@ -1,6 +1,7 @@
 const { PrismaClient } = require('@prisma/client');
 const argon2 = require('argon2');
 const { authenticator } = require('otplib');
+const { encryptTotpSecret } = require('./totp-crypto.util');
 
 const prisma = new PrismaClient();
 
@@ -24,7 +25,7 @@ async function main() {
   const totpSecret = authenticator.generateSecret();
 
   await prisma.operator.create({
-    data: { callsign, email, passwordHash, role: 'ADMIN', totpSecret },
+    data: { callsign, email, passwordHash, role: 'ADMIN', totpSecret: encryptTotpSecret(totpSecret) },
   });
 
   const keyUri = authenticator.keyuri(email, 'Kobata Matrix Corporation', totpSecret);
@@ -44,4 +45,3 @@ main()
   .finally(async () => {
     await prisma.$disconnect();
   });
-  
