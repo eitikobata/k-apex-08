@@ -7,6 +7,13 @@ import { ApiError, CaseFileSummaryDto, kBlackboxApi } from '@/lib/api-client';
 import { playSound } from '@/lib/sound-effects';
 import type { IncidentRecord } from './IncidentsPanel';
 
+const SKIPPED_MESSAGES: Record<string, string> = {
+  NO_API_KEY: 'AI summaries are not configured on this deployment (no API key set).',
+  CIRCUIT_OPEN: 'AI provider is temporarily unavailable (too many recent failures) — try again in a bit.',
+  API_ERROR: 'AI provider request failed — try again in a bit.',
+  INVALID_RESPONSE: "AI provider's response didn't pass validation twice in a row — try again, or open a different case.",
+};
+
 interface CaseRowData {
   incidentId: string;
   tier?: IncidentRecord['tier'];
@@ -76,7 +83,10 @@ export function BlackboxPanel({
     setBusyId(incidentId);
     try {
       const result = await kBlackboxApi.summarize(accessToken, incidentId);
-      setSummaries((prev) => ({ ...prev, [incidentId]: result.summary ?? result.skipped ?? 'No summary returned.' }));
+      const message =
+        result.summary ??
+        (result.skipped ? SKIPPED_MESSAGES[result.skipped] ?? `Summary unavailable (${result.skipped}).` : 'No summary returned.');
+      setSummaries((prev) => ({ ...prev, [incidentId]: message }));
     } catch (err) {
       setSummaries((prev) => ({
         ...prev,
