@@ -212,18 +212,23 @@ export class KSilenceRetryProcessor extends WorkerHost {
     super();
   }
 
-  // Permanent observability, not a one-off debugging aid — these fire for
-  // every job either way, cheap, and mean a future "everything's stuck
-  // again" report comes with an actual log trail on day one instead of
-  // needing another round-trip to add instrumentation first.
+  // Permanent observability, not a one-off debugging aid — active/completed
+  // stay at debug level (silent by default; Nest only shows debug when
+  // explicitly enabled) since they fire for every job, every retry, every
+  // node, forever — pure noise once things are working, as proven by how
+  // much log volume this generated during the actual outage investigation.
+  // failed/error stay at error level unconditionally — those are the ones
+  // that actually mean something's wrong, and a future "everything's stuck
+  // again" report should have them visible without needing a redeploy
+  // first to turn logging back up.
   @OnWorkerEvent('active')
   onActive(job: Job<RetryJobData | RecoveryJobData>) {
-    this.logger.warn(`[BullMQ] job ACTIVE: ${job.name}#${job.id}`);
+    this.logger.debug(`[BullMQ] job ACTIVE: ${job.name}#${job.id}`);
   }
 
   @OnWorkerEvent('completed')
   onCompleted(job: Job<RetryJobData | RecoveryJobData>) {
-    this.logger.warn(`[BullMQ] job COMPLETED: ${job.name}#${job.id}`);
+    this.logger.debug(`[BullMQ] job COMPLETED: ${job.name}#${job.id}`);
   }
 
   @OnWorkerEvent('failed')
