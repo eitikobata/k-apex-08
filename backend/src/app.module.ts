@@ -25,6 +25,16 @@ import { CommandsModule } from './commands/commands.module';
           host: config.get<string>('REDIS_HOST', 'localhost'),
           port: config.get<number>('REDIS_PORT', 6379),
           db: config.get<number>('REDIS_DB', 0),
+          // NOTE (bugfix): this was the entire K-SILENCE outage — missing
+          // here, present in RedisModule's own ioredis client right next
+          // to it. Every BullMQ worker connection attempt failed with
+          // NOAUTH Authentication required, silently, for the full
+          // lifetime of the K-SILENCE feature (3+ days of every
+          // SilenceState stuck in RETRYING with zero jobs ever
+          // processed). Found via the @OnWorkerEvent('error') logging
+          // added to KSilenceRetryProcessor — first real diagnostic
+          // signal after multiple blind attempts to fix this differently.
+          password: config.get<string>('REDIS_PASSWORD') || undefined,
         },
         prefix: config.get<string>('REDIS_KEY_PREFIX', 'kapex08:') + 'bullmq',
       }),
